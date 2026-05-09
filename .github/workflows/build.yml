@@ -31,11 +31,6 @@ jobs:
         with:
           workspaces: './src-tauri -> target'
 
-      - name: Install dependencies (macOS only)
-        if: matrix.platform == 'macos-latest'
-        run: |
-          # No extra system deps needed for Mac usually
-
       - name: Install frontend dependencies
         run: npm install
 
@@ -44,7 +39,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
+          # Use a fallback tag name if manually triggered
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'v0.1.0' }}
           releaseName: 'Packet Launcher v__VERSION__'
           releaseBody: 'Automated release from GitHub Actions'
           releaseDraft: true
