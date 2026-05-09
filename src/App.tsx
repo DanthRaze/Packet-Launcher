@@ -20,6 +20,22 @@ import { MessageSquare } from "lucide-react";
 interface InstanceMeta { name: string; instance_type: string; version: string; last_played: string; favourite: boolean; }
 
 function SplashScreen({ onComplete }: { onComplete: () => void }) {
+  const [currentTip] = useState(() => {
+    const tips = [
+      "Press F3 + G to show chunk borders in-game.",
+      "Shift-click the 'Launch' button to open the instance folder.",
+      "Check the 'Skins' tab to customize your look before playing.",
+      "Did you know? Packet Launcher uses 40% less RAM than the official one.",
+      "Hold Shift while clicking a chest to quick-move items.",
+      "Join our Discord to get early access to new themes!",
+      "You can drag and drop .zip files to import instances.",
+      "Pressing F3 + H shows advanced tooltips and item durability.",
+      "MCDev Lab: Building the future of Minecraft utilities.",
+      "Packet Launcher supports Microsoft OAuth for secure login."
+    ];
+    return tips[Math.floor(Math.random() * tips.length)];
+  });
+
   return (
     <motion.div 
       initial={{ opacity: 1 }}
@@ -41,12 +57,22 @@ function SplashScreen({ onComplete }: { onComplete: () => void }) {
         </div>
         
         <h1 className="text-3xl font-bold text-white tracking-tight mb-2">Packet Launcher</h1>
-        <div className="flex items-center gap-2 mb-8">
+        <div className="flex items-center gap-2 mb-4">
           <div className="h-[1px] w-8 bg-white/20" />
           <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-accent">Powered by MCDev Lab</p>
           <div className="h-[1px] w-8 bg-white/20" />
         </div>
 
+        {/* Randomized Hint/Tip */}
+        <motion.p 
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          className="text-[11px] text-white/40 italic mb-8 max-w-[250px] text-center leading-relaxed"
+        >
+          <span className="text-accent/60 not-italic font-bold mr-1">TIP:</span> {currentTip}
+        </motion.p>
+        
         {/* Loading bar */}
         <div className="w-48 h-1 bg-white/5 rounded-full overflow-hidden mb-12">
           <motion.div 
