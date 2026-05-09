@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { User, Users, UserPlus, LogIn, LogOut, Shield, Clock, Gamepad, ExternalLink, Star, Check, X, Send, MessageSquare } from "lucide-react";
+import { User, Users, UserPlus, LogIn, LogOut, Shield, Clock, Gamepad, Star, Check, X, Send, MessageSquare } from "lucide-react";
 
 const BACKEND_URL = "https://script.google.com/macros/s/AKfycby6VK3P4suZuA58VJA4QfuUBYtBLBxp7QaPREDNuYkuehFdZCVPai9N_MOeq3NdSUsq/exec";
 
