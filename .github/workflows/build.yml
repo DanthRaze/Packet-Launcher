@@ -1,6 +1,8 @@
 name: Release
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
   workflow_dispatch:
@@ -39,7 +41,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          # Use a fallback tag name if manually triggered
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'v0.1.0' }}
           releaseName: 'Packet Launcher v__VERSION__'
           releaseBody: 'Automated release from GitHub Actions'
