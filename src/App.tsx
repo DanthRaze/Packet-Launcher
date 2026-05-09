@@ -15,8 +15,74 @@ import DiscoverPage from "./pages/Discover.tsx";
 import InstancesPage from "./pages/Instances.tsx";
 import SkinsPage from "./pages/Skins.tsx";
 import SettingsPage from "./pages/Settings.tsx";
+import { MessageSquare } from "lucide-react";
 
 interface InstanceMeta { name: string; instance_type: string; version: string; last_played: string; favourite: boolean; }
+
+function SplashScreen({ onComplete }: { onComplete: () => void }) {
+  return (
+    <motion.div 
+      initial={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.8, ease: "easeInOut" }}
+      className="fixed inset-0 z-[200] flex flex-col items-center justify-center bg-[#0a0a0a]"
+    >
+      {/* Animated Background Glow */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-accent/20 rounded-full blur-[120px] animate-pulse" />
+      
+      <motion.div 
+        initial={{ scale: 0.8, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ duration: 1, ease: "easeOut" }}
+        className="relative z-10 flex flex-col items-center"
+      >
+        <div className="w-24 h-24 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center mb-6 shadow-2xl backdrop-blur-xl">
+          <img src="https://i.imghippo.com/files/hfRa5982h.png" className="w-16 h-16 object-contain" alt="Logo" />
+        </div>
+        
+        <h1 className="text-3xl font-bold text-white tracking-tight mb-2">Packet Launcher</h1>
+        <div className="flex items-center gap-2 mb-8">
+          <div className="h-[1px] w-8 bg-white/20" />
+          <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-accent">Powered by MCDev Lab</p>
+          <div className="h-[1px] w-8 bg-white/20" />
+        </div>
+
+        {/* Loading bar */}
+        <div className="w-48 h-1 bg-white/5 rounded-full overflow-hidden mb-12">
+          <motion.div 
+            initial={{ x: "-100%" }}
+            animate={{ x: "100%" }}
+            transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+            className="w-full h-full bg-accent shadow-[0_0_15px_var(--accent)]"
+          />
+        </div>
+
+        {/* Discord Link */}
+        <motion.a 
+          href="https://discord.gg/wkbhNwZsTM"
+          target="_blank"
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ delay: 0.5 }}
+          className="flex items-center gap-3 px-6 py-3 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 hover:border-accent/30 transition-all group"
+        >
+          <MessageSquare size={18} className="text-accent group-hover:scale-110 transition-transform" />
+          <span className="text-xs font-bold uppercase tracking-widest text-white/70 group-hover:text-white">Join MCDev Lab</span>
+        </motion.a>
+      </motion.div>
+
+      <motion.button 
+        onClick={onComplete}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 2 }}
+        className="absolute bottom-10 text-[10px] font-bold uppercase tracking-widest text-white/30 hover:text-white transition-colors"
+      >
+        Click to skip
+      </motion.button>
+    </motion.div>
+  );
+}
 
 const staticNav = [
   { name: "Home", path: "/", icon: Home },
@@ -151,13 +217,20 @@ function setAccentVars(hex: string, gradient: string) {
 
 function App() {
   const [detailsInstance, setDetailsInstance] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    // Initial splash screen timer
+    const timer = setTimeout(() => setIsLoading(false), 3500);
+
     const handleOpenDetails = (e: any) => {
       if (e.detail && e.detail.name) setDetailsInstance(e.detail.name);
     };
     window.addEventListener("open-instance-details" as any, handleOpenDetails);
-    return () => window.removeEventListener("open-instance-details" as any, handleOpenDetails);
+    return () => {
+      window.removeEventListener("open-instance-details" as any, handleOpenDetails);
+      clearTimeout(timer);
+    };
   }, []);
 
   useEffect(() => {
@@ -175,6 +248,10 @@ function App() {
   return (
     <BrowserRouter>
       <div className="flex flex-col h-screen overflow-hidden font-sans pt-9" style={{ background: "var(--bg-primary)" }}>
+        <AnimatePresence>
+          {isLoading && <SplashScreen onComplete={() => setIsLoading(false)} />}
+        </AnimatePresence>
+
         {/* Subtle grid overlay */}
         <div className="grid-bg" />
         <Titlebar />
