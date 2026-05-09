@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "tauri-app",
+  "productName": "Packet Launcher",
   "version": "0.1.0",
-  "identifier": "com.packetlauncher.app",
+  "identifier": "com.packet.launcher",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "tauri-app",
+        "title": "Packet Launcher",
         "decorations": false,
         "width": 800,
         "height": 600
@@ -26,9 +26,9 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec?action=update"
+        "https://script.google.com/macros/s/AKfycby6VK3P4suZuA58VJA4QfuUBYtBLBxp7QaPREDNuYkuehFdZCVPai9N_MOeq3NdSUsq/exec?action=update"
       ],
-      "pubkey": "YOUR_PUBLIC_KEY_HERE"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM1MzM3RUYzRjdCMkM1MEMKUldRTXhiTDM4MzR6TmNDTXhYc1FqYU5xTkFSVWcwQVh1eDBSTUU2VVE3dGc5ajVqaXdWWUtnb0YK"
     }
   },
   "bundle": {
