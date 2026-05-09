@@ -2,7 +2,10 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { invoke } from "@tauri-apps/api/core";
 import { setAccentVars } from "../utils/theme";
-import { Settings as SettingsIcon, Terminal, Download, Globe, MessageSquare } from "lucide-react";
+import { Settings as SettingsIcon, Terminal, Download, Globe, MessageSquare, RefreshCw, DownloadCloud, CheckCircle2, AlertCircle } from "lucide-react";
+import { check, Update } from '@tauri-apps/plugin-updater';
+import { relaunch } from '@tauri-apps/plugin-process';
+import { getVersion } from '@tauri-apps/api/app';
 
 const SOLID_COLORS = [
   { name: "Purple", hex: "#8b5cf6", gradient: "linear-gradient(135deg, #8b5cf6, #7c3aed)" },
@@ -55,6 +58,13 @@ export default function Settings() {
   // Social
   const [socialIntro, setSocialIntro] = useState(true);
 
+  // Updates
+  const [currentVersion, setCurrentVersion] = useState("0.0.0");
+  const [updateInfo, setUpdateInfo] = useState<Update | null>(null);
+  const [isChecking, setIsChecking] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+
   useEffect(() => {
     // Load existing settings
     const s = localStorage.getItem('auto_update_enabled');
@@ -88,8 +98,39 @@ export default function Settings() {
         .then(p => { if (p) { setProfile(p); setAuthStatus("in"); } })
         .catch(() => {});
       if (drpc) invoke("set_discord_rpc", { enabled: true }).catch(console.error);
+      getVersion().then(setCurrentVersion).catch(() => {});
     }
   }, []);
+
+  const handleCheckUpdates = async () => {
+    setIsChecking(true);
+    setUpdateError(null);
+    setUpdateInfo(null);
+    try {
+      if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
+        const update = await check();
+        setUpdateInfo(update);
+      } else {
+        setUpdateError("Updates only available in the desktop app");
+      }
+    } catch (e: any) {
+      setUpdateError(String(e));
+    } finally {
+      setIsChecking(false);
+    }
+  };
+
+  const handleInstallUpdate = async () => {
+    if (!updateInfo) return;
+    setIsUpdating(true);
+    try {
+      await updateInfo.downloadAndInstall();
+      await relaunch();
+    } catch (e: any) {
+      setUpdateError(String(e));
+      setIsUpdating(false);
+    }
+  };
 
 
 
@@ -226,13 +267,72 @@ export default function Settings() {
                 </Section>
 
                 <Section label="Updates">
-                   <div className="flex items-center justify-between">
-                     <span className="text-xs font-bold text-white uppercase tracking-wider">Auto-Check</span>
-                     <button onClick={() => { const n = !autoUpdate; setAutoUpdate(n); localStorage.setItem('auto_update_enabled', String(n)); }}
-                      className={`w-10 h-5 rounded-full relative transition-colors ${autoUpdate ? "bg-accent" : "bg-white/10"}`}>
-                       <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${autoUpdate ? "left-6" : "left-1"}`} />
-                     </button>
-                   </div>
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-bold text-white uppercase tracking-wider">Auto-Check</p>
+                        <p className="text-[10px] text-muted mt-0.5">Check for updates on launch</p>
+                      </div>
+                      <button onClick={() => { const n = !autoUpdate; setAutoUpdate(n); localStorage.setItem('auto_update_enabled', String(n)); }}
+                        className={`w-10 h-5 rounded-full relative transition-colors ${autoUpdate ? "bg-accent" : "bg-white/10"}`}>
+                        <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${autoUpdate ? "left-6" : "left-1"}`} />
+                      </button>
+                    </div>
+
+                    <div className="p-4 rounded-sm bg-white/5 border divider space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-[10px] font-bold text-muted uppercase tracking-[0.2em] mb-1">Current Version</p>
+                          <p className="text-sm font-bold text-white">v{currentVersion}</p>
+                        </div>
+                        <button 
+                          onClick={handleCheckUpdates}
+                          disabled={isChecking || isUpdating}
+                          className="flex items-center gap-2 px-4 py-2 rounded-sm bg-accent/10 hover:bg-accent/20 text-accent text-[10px] font-bold uppercase tracking-widest transition-all disabled:opacity-50"
+                        >
+                          <RefreshCw size={14} className={isChecking ? "animate-spin" : ""} />
+                          {isChecking ? "Checking..." : "Check for Updates"}
+                        </button>
+                      </div>
+
+                      {updateError && (
+                        <div className="flex items-center gap-2 p-3 text-[10px] bg-red-500/10 border border-red-500/20 text-red-400 rounded-sm">
+                          <AlertCircle size={14} />
+                          {updateError}
+                        </div>
+                      )}
+
+                      {updateInfo ? (
+                        <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} className="pt-4 border-t divider space-y-3">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-[10px] font-bold text-accent uppercase tracking-widest mb-1">Update Available</p>
+                              <p className="text-lg font-bold text-white">v{updateInfo.version}</p>
+                            </div>
+                            <button 
+                              onClick={handleInstallUpdate}
+                              disabled={isUpdating}
+                              className="flex items-center gap-2 px-6 py-2.5 rounded-sm bg-accent text-white text-[10px] font-bold uppercase tracking-widest hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
+                            >
+                              <DownloadCloud size={16} />
+                              {isUpdating ? "Installing..." : "Install & Restart"}
+                            </button>
+                          </div>
+                          {updateInfo.body && (
+                            <div className="p-3 bg-black/20 rounded-sm">
+                              <p className="text-[10px] font-bold text-muted uppercase mb-1">Release Notes</p>
+                              <p className="text-xs text-secondary leading-relaxed">{updateInfo.body}</p>
+                            </div>
+                          )}
+                        </motion.div>
+                      ) : !isChecking && !updateError && (
+                         <div className="flex items-center gap-2 text-[10px] text-emerald-400 font-bold uppercase tracking-widest pt-2">
+                           <CheckCircle2 size={14} />
+                           You are on the latest version
+                         </div>
+                      )}
+                    </div>
+                  </div>
                 </Section>
               </motion.div>
             )}

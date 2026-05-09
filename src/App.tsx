@@ -4,7 +4,9 @@ import { Home, Compass, LayoutGrid, Settings as SettingsIcon, Star, User, Messag
 import { check } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { invoke } from "@tauri-apps/api/core";
+import { getVersion } from "@tauri-apps/api/app";
 import { motion, AnimatePresence } from "framer-motion";
+import { PartyPopper, X } from "lucide-react";
 import InstanceDetails from "./components/InstanceDetails";
 import { setAccentVars } from "./utils/theme";
 import "./App.css";
@@ -41,7 +43,7 @@ function SplashScreen({ onComplete }: { onComplete: () => void }) {
   });
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.8, ease: "easeInOut" }}
@@ -49,8 +51,8 @@ function SplashScreen({ onComplete }: { onComplete: () => void }) {
     >
       {/* Animated Background Glow */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-accent/20 rounded-full blur-[120px] animate-pulse" />
-      
-      <motion.div 
+
+      <motion.div
         initial={{ scale: 0.8, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         transition={{ duration: 1, ease: "easeOut" }}
@@ -59,7 +61,7 @@ function SplashScreen({ onComplete }: { onComplete: () => void }) {
         <div className="w-24 h-24 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center mb-6 shadow-2xl backdrop-blur-xl">
           <img src="https://i.imghippo.com/files/hfRa5982h.png" className="w-16 h-16 object-contain" alt="Logo" />
         </div>
-        
+
         <h1 className="text-3xl font-bold text-white tracking-tight mb-2">Packet Launcher</h1>
         <div className="flex items-center gap-2 mb-4">
           <div className="h-[1px] w-8 bg-white/20" />
@@ -68,7 +70,7 @@ function SplashScreen({ onComplete }: { onComplete: () => void }) {
         </div>
 
         {/* Randomized Hint/Tip */}
-        <motion.p 
+        <motion.p
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
@@ -76,10 +78,10 @@ function SplashScreen({ onComplete }: { onComplete: () => void }) {
         >
           <span className="text-accent/60 not-italic font-bold mr-1">TIP:</span> {currentTip}
         </motion.p>
-        
+
         {/* Loading bar */}
         <div className="w-48 h-1 bg-white/5 rounded-full overflow-hidden mb-12">
-          <motion.div 
+          <motion.div
             initial={{ x: "-100%" }}
             animate={{ x: "100%" }}
             transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
@@ -88,7 +90,7 @@ function SplashScreen({ onComplete }: { onComplete: () => void }) {
         </div>
 
         {/* Discord Link */}
-        <motion.a 
+        <motion.a
           href="https://discord.gg/wkbhNwZsTM"
           target="_blank"
           initial={{ y: 20, opacity: 0 }}
@@ -101,7 +103,7 @@ function SplashScreen({ onComplete }: { onComplete: () => void }) {
         </motion.a>
       </motion.div>
 
-      <motion.button 
+      <motion.button
         onClick={onComplete}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -129,11 +131,11 @@ function Sidebar() {
   useEffect(() => {
     const isTauri = '__TAURI__' in window || (window as any).__TAURI_INTERNALS__;
     if (isTauri) {
-      invoke<InstanceMeta[]>("list_instances").then(insts => setFavourites(insts.filter(i => i.favourite))).catch(() => {});
+      invoke<InstanceMeta[]>("list_instances").then(insts => setFavourites(insts.filter(i => i.favourite))).catch(() => { });
     }
     const handler = () => {
       if (isTauri) {
-        invoke<InstanceMeta[]>("list_instances").then(insts => setFavourites(insts.filter(i => i.favourite))).catch(() => {});
+        invoke<InstanceMeta[]>("list_instances").then(insts => setFavourites(insts.filter(i => i.favourite))).catch(() => { });
       }
     };
     window.addEventListener("instances-updated", handler);
@@ -179,7 +181,7 @@ function Sidebar() {
           <div className="mt-4 px-2 xl:px-3">
             <p className="hidden xl:block text-[10px] font-bold tracking-widest uppercase px-3 mb-2" style={{ color: "var(--text-muted)" }}>Favourites</p>
             {favourites.map(inst => (
-              <button key={inst.name} 
+              <button key={inst.name}
                 onClick={() => {
                   window.dispatchEvent(new CustomEvent("open-instance-details", { detail: { name: inst.name } }));
                 }}
@@ -239,6 +241,8 @@ function AnimatedRoutes() {
 function App() {
   const [detailsInstance, setDetailsInstance] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [showUpdateWelcome, setShowUpdateWelcome] = useState(false);
+  const [currentVersion, setCurrentVersion] = useState("");
 
   useEffect(() => {
     // Initial splash screen timer
@@ -261,9 +265,25 @@ function App() {
 
     async function checkUpdates() {
       if (localStorage.getItem('auto_update_enabled') === 'false') return;
-      try { const u = await check(); if (u) { await u.downloadAndInstall(); await relaunch(); } } catch {}
+      try { const u = await check(); if (u) { await u.downloadAndInstall(); await relaunch(); } } catch { }
     }
-    if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) checkUpdates();
+
+    async function initVersion() {
+      if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
+        const version = await getVersion();
+        setCurrentVersion(version);
+        const lastSeen = localStorage.getItem('last_seen_version');
+        if (lastSeen && lastSeen !== version) {
+          setShowUpdateWelcome(true);
+        }
+        localStorage.setItem('last_seen_version', version);
+      }
+    }
+
+    if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
+      checkUpdates();
+      initVersion();
+    }
   }, []);
 
 
@@ -297,7 +317,7 @@ function App() {
       if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
         try {
           await invoke("set_discord_rpc", { enabled: true });
-        } catch {}
+        } catch { }
       }
     };
     updateRPC();
@@ -319,15 +339,41 @@ function App() {
             <StatusBadge />
             <DownloadManager />
             <AnimatedRoutes />
-            
+
+            <AnimatePresence>
+              {showUpdateWelcome && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                  className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[100] w-[320px] p-6 rounded-2xl bg-[#111] border border-accent/30 shadow-[0_20px_50px_rgba(0,0,0,0.5)] backdrop-blur-xl"
+                >
+                  <div className="absolute top-4 right-4 text-white/20 hover:text-white cursor-pointer transition-colors" onClick={() => setShowUpdateWelcome(false)}>
+                    <X size={16} />
+                  </div>
+                  <div className="w-12 h-12 rounded-xl bg-accent/20 flex items-center justify-center mb-4">
+                    <PartyPopper className="text-accent" size={24} />
+                  </div>
+                  <h2 className="text-lg font-bold text-white mb-1">Updated Successfully!</h2>
+                  <p className="text-sm text-white/60 mb-6">Welcome to Packet Launcher <span className="text-accent font-bold">v{currentVersion}</span>. Enjoy the new features!</p>
+                  <button
+                    onClick={() => setShowUpdateWelcome(false)}
+                    className="w-full py-3 rounded-lg bg-accent text-white text-xs font-bold uppercase tracking-widest hover:scale-[1.02] active:scale-[0.98] transition-all"
+                  >
+                    Let's Play
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             <AnimatePresence>
               {detailsInstance && (
-                <InstanceDetails 
-                  instanceName={detailsInstance} 
-                  onClose={() => setDetailsInstance(null)} 
+                <InstanceDetails
+                  instanceName={detailsInstance}
+                  onClose={() => setDetailsInstance(null)}
                   onDelete={() => {
                     window.dispatchEvent(new Event("instances-updated"));
-                  }} 
+                  }}
                 />
               )}
             </AnimatePresence>

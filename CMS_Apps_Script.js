@@ -240,10 +240,18 @@ function handleUpdate(sheetId) {
   if (!sheet) return jsonResponse({ error: "Sheet 'Updates' not found" });
   const data = sheet.getDataRange().getValues();
   if (data.length < 2) return jsonResponse({ error: "No update data found" });
-  const headers = data[0], latest = data[1], updateData = {};
-  for (let j = 0; j < headers.length; j++) updateData[headers[j]] = latest[j];
+  
+  const headers = data[0];
+  const latest = data[data.length - 1]; // Use the last row for the latest version
+  const updateData = {};
+  for (let j = 0; j < headers.length; j++) {
+    updateData[headers[j]] = latest[j];
+  }
+
   return jsonResponse({
-    version: updateData.version, notes: updateData.notes, pub_date: updateData.pub_date,
+    version: String(updateData.version),
+    notes: updateData.pub_notes || "",
+    pub_date: updateData.date || "",
     platforms: {
       "darwin-x86_64": { signature: updateData.sig_mac_x64, url: updateData.url_mac_x64 },
       "darwin-aarch64": { signature: updateData.sig_mac_arm, url: updateData.url_mac_arm },
