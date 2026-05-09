@@ -98,7 +98,7 @@ export default function Socials() {
   const [requests, setRequests] = useState<Friend[]>([]);
   const [loadingMsg, setLoadingMsg] = useState<string | null>(null);
   const [showIntro, setShowIntro] = useState(() => localStorage.getItem("social_intro_enabled") !== "false");
-  
+
   // Chat state
   const [activeChat, setActiveChat] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -131,7 +131,7 @@ export default function Socials() {
       const res = await fetch(`${BACKEND_URL}?action=getMessages&u1=${user.Username}&u2=${activeChat}`);
       const data = await res.json();
       setMessages(data);
-    } catch {}
+    } catch { }
   };
 
   useEffect(() => {
@@ -139,7 +139,7 @@ export default function Socials() {
       setUser(e.detail);
     };
     window.addEventListener("user-updated" as any, handleUserUpdate);
-    
+
     if (user) {
       fetchSocialData();
       const interval = setInterval(fetchSocialData, 30000);
@@ -204,7 +204,7 @@ export default function Socials() {
         setAddFriendName("");
         fetchSocialData();
       }
-    } catch {}
+    } catch { }
     setLoadingMsg(null);
   };
 
@@ -214,7 +214,7 @@ export default function Socials() {
     try {
       await fetch(`${BACKEND_URL}?action=friendRequest&from=${target}&to=${user.Username}&op=${op}`);
       fetchSocialData();
-    } catch {}
+    } catch { }
     setLoadingMsg(null);
   };
 
@@ -229,7 +229,7 @@ export default function Socials() {
       const updatedUser = { ...user, NametagConfig: newConfig };
       setUser(updatedUser);
       localStorage.setItem("packet_user", JSON.stringify(updatedUser));
-    } catch {}
+    } catch { }
     setLoadingMsg(null);
   };
 
@@ -240,7 +240,7 @@ export default function Socials() {
     try {
       await fetch(`${BACKEND_URL}?action=sendMessage&from=${user.Username}&to=${activeChat}&msg=${encodeURIComponent(msg)}`);
       fetchMessages();
-    } catch {}
+    } catch { }
   };
 
   const handleLogout = () => {
@@ -263,7 +263,7 @@ export default function Socials() {
         setUser(updated);
         localStorage.setItem("packet_user", JSON.stringify(updated));
       }
-    } catch {}
+    } catch { }
     setLoadingMsg(null);
   };
 
@@ -278,7 +278,7 @@ export default function Socials() {
     if (config.Shimmer) classes += "shimmer-text ";
     if (config.Outline) style.textShadow = "1px 1px 0px #000, -1px -1px 0px #000, 1px -1px 0px #000, -1px 1px 0px #000";
     if (config.Glowing) style.filter = "drop-shadow(0 0 8px var(--accent))";
-    
+
     if (config.Shaking) animations.push("shake 0.5s infinite");
     if (config.Waving) animations.push("wave 2s infinite ease-in-out");
     if (config.Growing) animations.push("grow 3s infinite ease-in-out");
@@ -315,7 +315,7 @@ export default function Socials() {
                 className="w-full bg-white/5 border border-white/10 rounded-sm px-4 py-3 text-sm text-white outline-none focus:border-accent/50 transition-colors" />
             </div>
             {authError && <p className="text-xs text-red-400 text-center">{authError}</p>}
-            
+
             <button onClick={handleAuth} className="w-full bg-accent hover:bg-accent/90 text-white font-bold py-3 rounded-sm text-sm transition-all flex items-center justify-center gap-2">
               {isLogin ? <LogIn size={18} /> : <UserPlus size={18} />}
               {isLogin ? "Sign In" : "Create Account"}
@@ -333,7 +333,7 @@ export default function Socials() {
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex-1 flex flex-col h-full relative overflow-hidden">
       <AnimatePresence>{loadingMsg && <SocialLoading message={loadingMsg} />}</AnimatePresence>
-      
+
       <div className="p-8 pb-0">
         <div className="flex items-center justify-between mb-8">
           <div>
@@ -401,7 +401,7 @@ export default function Socials() {
                         <MessageSquare size={16} />
                       </button>
                     </div>
-                    
+
                     {friend.onlineStatus === 'Online' && friend.activity && (
                       <div className="mt-4 p-3 rounded-sm bg-white/5 border border-white/5">
                         <div className="flex items-center gap-2 mb-1">
@@ -460,9 +460,9 @@ export default function Socials() {
                   <div>
                     <h3 className="font-bold text-white">Nametag Customization</h3>
                     <p className="text-xs text-white/40 mt-0.5">
-                      {user.Playtime >= 2880 
-                        ? "You've unlocked custom nametags! Your features will be visible to all Packet users." 
-                        : `Play for 48 hours to unlock custom nametags. You need ${( (2880 - user.Playtime) / 60 ).toFixed(1)} more hours.`}
+                      {user.Playtime >= 2880
+                        ? "You've unlocked custom nametags! Your features will be visible to all Packet users."
+                        : `Play for 48 hours to unlock custom nametags. You need ${((2880 - user.Playtime) / 60).toFixed(1)} more hours.`}
                     </p>
                   </div>
                 </div>
@@ -493,8 +493,8 @@ export default function Socials() {
                   <div className="absolute -inset-4 bg-accent/20 blur-2xl rounded-full opacity-50" />
                   <div className="relative bg-white/5 border border-white/10 px-8 py-3 rounded-sm flex flex-col items-center">
                     <p className="text-[10px] font-bold text-accent uppercase tracking-widest mb-1">MCDev Lab</p>
-                    <p className={`text-xl font-bold text-white tracking-tight ${getNametagStyles(user.NametagConfig).classes}`} 
-                       style={getNametagStyles(user.NametagConfig).style}>{user.Username}</p>
+                    <p className={`text-xl font-bold text-white tracking-tight ${getNametagStyles(user.NametagConfig).classes}`}
+                      style={getNametagStyles(user.NametagConfig).style}>{user.Username}</p>
                   </div>
                 </div>
               </div>
@@ -504,16 +504,16 @@ export default function Socials() {
                   <h3 className="text-sm font-bold text-white mb-1">Public Profile</h3>
                   <p className="text-xs text-white/40">Customize how others see you in the Social Hub.</p>
                 </div>
-                
+
                 <div className="space-y-4">
                   <div>
                     <label className="block text-[10px] font-bold text-accent uppercase tracking-widest mb-2">Biography</label>
-                    <textarea value={user.Bio} onChange={e => setUser({...user, Bio: e.target.value})} onBlur={() => updateProfile(user.Bio, user.PFP)}
+                    <textarea value={user.Bio} onChange={e => setUser({ ...user, Bio: e.target.value })} onBlur={() => updateProfile(user.Bio, user.PFP)}
                       className="w-full bg-white/5 border border-white/10 rounded-sm px-4 py-3 text-sm text-white outline-none focus:border-accent/50 transition-colors h-24 resize-none" />
                   </div>
                   <div>
                     <label className="block text-[10px] font-bold text-accent uppercase tracking-widest mb-2">Profile Picture URL</label>
-                    <input type="text" value={user.PFP} onChange={e => setUser({...user, PFP: e.target.value})} onBlur={() => updateProfile(user.Bio, user.PFP)}
+                    <input type="text" value={user.PFP} onChange={e => setUser({ ...user, PFP: e.target.value })} onBlur={() => updateProfile(user.Bio, user.PFP)}
                       placeholder="https://example.com/image.png (Leave empty for MC Avatar)"
                       className="w-full bg-white/5 border border-white/10 rounded-sm px-4 py-3 text-sm text-white outline-none focus:border-accent/50 transition-colors" />
                   </div>
@@ -535,7 +535,7 @@ export default function Socials() {
               </div>
               <button onClick={() => setActiveChat(null)} className="p-1.5 hover:bg-white/5 rounded text-white/40 hover:text-white"><X size={18} /></button>
             </div>
-            
+
             <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar bg-black/20">
               {messages.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-white/10">
@@ -563,7 +563,8 @@ export default function Socials() {
         )}
       </AnimatePresence>
 
-      <style dangerouslySetInnerHTML={{ __html: `
+      <style dangerouslySetInnerHTML={{
+        __html: `
         @keyframes shake {
           0% { transform: translate(1px, 1px) rotate(0deg); }
           10% { transform: translate(-1px, -2px) rotate(-1deg); }
