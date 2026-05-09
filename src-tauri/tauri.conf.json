@@ -40,6 +40,21 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "dmg": {
+      "background": "assets/dmg-background.png",
+      "windowSize": {
+        "width": 800,
+        "height": 450
+      },
+      "appPosition": {
+        "x": 220,
+        "y": 250
+      },
+      "applicationFolderPosition": {
+        "x": 580,
+        "y": 250
+      }
+    }
   }
 }
