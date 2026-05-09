@@ -1,15 +1,15 @@
 import { useState, useEffect } from "react";
-import { Search, Download } from "lucide-react";
+import { Search, Download, Gamepad, X } from "lucide-react";
 import { motion } from "framer-motion";
 import { invoke } from "@tauri-apps/api/core";
-import { X } from "lucide-react";
 
 const TABS = [
   { id: "modpack", label: "Modpacks" },
   { id: "mod", label: "Mods" },
   { id: "resourcepack", label: "Resource Packs" },
   { id: "shader", label: "Shaders" },
-  { id: "datapack", label: "Data Packs" }
+  { id: "datapack", label: "Data Packs" },
+  { id: "servers", label: "Servers" }
 ];
 
 // Modrinth project type names (what the API actually uses)
@@ -51,12 +51,26 @@ export default function Discover() {
     const fetch_ = async () => {
       setLoading(true);
       try {
-        const type = MODRINTH_TYPE[activeTab];
-        const facet = `[["project_type:${type}"]]`;
-        const url = `https://api.modrinth.com/v2/search?query=${encodeURIComponent(query)}&facets=${encodeURIComponent(facet)}&limit=12`;
-        const res = await fetch(url);
-        const data = await res.json();
-        setResults(data.hits || []);
+        if (activeTab === "servers") {
+          const res = await fetch("https://script.google.com/macros/s/AKfycby6VK3P4suZuA58VJA4QfuUBYtBLBxp7QaPREDNuYkuehFdZCVPai9N_MOeq3NdSUsq/exec?action=servers");
+          const data = await res.json();
+          setResults(data.map((s: any) => ({
+            project_id: s.IP,
+            title: s.Name,
+            description: s.ShortDescription,
+            icon_url: s.IconURL,
+            author: s.IP,
+            downloads: 0,
+            project_type: "server"
+          })));
+        } else {
+          const type = MODRINTH_TYPE[activeTab];
+          const facet = `[["project_type:${type}"]]`;
+          const url = `https://api.modrinth.com/v2/search?query=${encodeURIComponent(query)}&facets=${encodeURIComponent(facet)}&limit=12`;
+          const res = await fetch(url);
+          const data = await res.json();
+          setResults(data.hits || []);
+        }
       } catch { setResults([]); }
       setLoading(false);
     };
@@ -225,9 +239,15 @@ export default function Discover() {
                   <p className="text-[11px] mb-1.5 truncate text-accent">by {p.author}</p>
                   <p className="text-xs line-clamp-2 leading-relaxed" style={{ color: "var(--text-secondary)" }}>{p.description}</p>
                   <div className="mt-2.5">
-                    <span className="tag flex items-center gap-1 w-fit">
-                      <Download size={9} /> {fmt(p.downloads)}
-                    </span>
+                    {activeTab === "servers" ? (
+                      <span className="tag flex items-center gap-1 w-fit bg-accent/20 text-accent border-accent/20">
+                        <Gamepad size={9} /> Featured Server
+                      </span>
+                    ) : (
+                      <span className="tag flex items-center gap-1 w-fit">
+                        <Download size={9} /> {fmt(p.downloads)}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>

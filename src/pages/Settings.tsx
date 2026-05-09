@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { invoke } from "@tauri-apps/api/core";
-import { setAccentVars } from "../App";
-import { Settings as SettingsIcon, Terminal, Download, Globe } from "lucide-react";
+import { setAccentVars } from "../utils/theme";
+import { Settings as SettingsIcon, Terminal, Download, Globe, MessageSquare } from "lucide-react";
 
 const SOLID_COLORS = [
   { name: "Purple", hex: "#8b5cf6", gradient: "linear-gradient(135deg, #8b5cf6, #7c3aed)" },
@@ -23,6 +23,7 @@ const TABS = [
   { id: "general", label: "General", icon: SettingsIcon },
   { id: "advanced", label: "Advanced", icon: Terminal },
   { id: "resources", label: "Resources", icon: Download },
+  { id: "social", label: "Social Hub", icon: MessageSquare },
   { id: "discord", label: "Discord", icon: Globe },
 ];
 
@@ -51,6 +52,9 @@ export default function Settings() {
   // Discord
   const [discordRpc, setDiscordRpc] = useState(true);
 
+  // Social
+  const [socialIntro, setSocialIntro] = useState(true);
+
   useEffect(() => {
     // Load existing settings
     const s = localStorage.getItem('auto_update_enabled');
@@ -74,6 +78,9 @@ export default function Settings() {
     // Discord
     const drpc = localStorage.getItem('discord_rpc') !== 'false';
     setDiscordRpc(drpc);
+
+    // Social
+    setSocialIntro(localStorage.getItem('social_intro_enabled') !== 'false');
 
     if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
       invoke<number>("get_system_memory").then(m => setSystemRam(m > 0 ? m : 8)).catch(() => {});
@@ -317,6 +324,27 @@ export default function Settings() {
                     <button onClick={toggleDiscord}
                       className={`w-10 h-5 rounded-full relative transition-colors ${discordRpc ? "bg-accent" : "bg-white/10"}`}>
                        <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${discordRpc ? "left-6" : "left-1"}`} />
+                     </button>
+                  </div>
+                </Section>
+              </motion.div>
+            )}
+
+            {activeTab === "social" && (
+              <motion.div key="social" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }}>
+                <Section label="Social Hub Experience">
+                  <div className="flex items-center justify-between p-2">
+                    <div>
+                      <p className="text-sm font-bold text-white">Social Page Intro</p>
+                      <p className="text-xs text-muted mt-0.5">Show "Packet Launcher -- Socials" animation on enter</p>
+                    </div>
+                    <button onClick={() => {
+                      const next = !socialIntro;
+                      setSocialIntro(next);
+                      localStorage.setItem('social_intro_enabled', String(next));
+                    }}
+                      className={`w-10 h-5 rounded-full relative transition-colors ${socialIntro ? "bg-accent" : "bg-white/10"}`}>
+                       <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${socialIntro ? "left-6" : "left-1"}`} />
                      </button>
                   </div>
                 </Section>

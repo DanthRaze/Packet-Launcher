@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { invoke } from "@tauri-apps/api/core";
-import { Star, Play, X, Plus, Package, Folder, Trash2, Pin, Cpu, Settings2 } from "lucide-react";
+import { Star, Play, X, Plus, Package, Folder, Trash2, Pin, Cpu, Settings } from "lucide-react";
+
+const BACKEND_URL = "https://script.google.com/macros/s/AKfycby6VK3P4suZuA58VJA4QfuUBYtBLBxp7QaPREDNuYkuehFdZCVPai9N_MOeq3NdSUsq/exec";
 
 interface InstanceMeta { name: string; instance_type: string; version: string; last_played: string; favourite: boolean; pinned?: boolean; }
 interface MCVersion { id: string; type: string; }
@@ -122,6 +124,19 @@ export default function Instances() {
     try {
       const ramStr = localStorage.getItem('allocated_ram') || '4';
       const ram = parseInt(ramStr, 10) || 4;
+      
+      // Update status to backend
+      const savedUser = localStorage.getItem("packet_user");
+      if (savedUser) {
+        const user = JSON.parse(savedUser);
+        fetch(`${BACKEND_URL}?action=updateStatus&username=${user.Username}&status=Online&activity=Playing%20Minecraft&details=${encodeURIComponent(name)}`).catch(() => {});
+        
+        // Update Discord RPC
+        if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
+          invoke("update_discord_rpc", { state: "Playing Minecraft", details: name }).catch(() => {});
+        }
+      }
+
       if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
         await invoke("launch_instance", { instanceName: name, allocatedRamGb: ram });
       } else {
@@ -252,7 +267,7 @@ export default function Instances() {
               setContextMenu(null); 
             }}
               className="w-full px-4 py-2 text-left text-xs font-semibold hover:bg-white/5 flex items-center gap-3 transition-colors">
-              <Settings2 size={14} className="text-accent" /> View Details
+              <Settings size={14} className="text-accent" /> View Details
             </button>
             <button onClick={() => { handlePin(contextMenu.name); setContextMenu(null); }}
               className="w-full px-4 py-2 text-left text-xs font-semibold hover:bg-white/5 flex items-center gap-3 transition-colors text-white">

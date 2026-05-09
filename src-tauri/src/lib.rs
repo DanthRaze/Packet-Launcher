@@ -364,6 +364,21 @@ fn set_discord_rpc(enabled: bool) -> Result<(), String> {
 }
 
 #[command]
+fn update_discord_rpc(state: String, details: String) -> Result<(), String> {
+    let mut client_lock = DISCORD_CLIENT.lock().unwrap();
+    if let Some(client) = client_lock.as_mut() {
+        let _ = client.set_activity(discord_rich_presence::activity::Activity::new()
+            .state(&state)
+            .details(&details)
+            .assets(discord_rich_presence::activity::Assets::new()
+                .large_image("logo")
+                .large_text("Packet Launcher"))
+        );
+    }
+    Ok(())
+}
+
+#[command]
 async fn upload_skin(data: Vec<u8>) -> Result<String, String> {
     let profile_path = data_dir().join("profile.json");
     if !profile_path.exists() { return Err("Not logged in".into()); }
@@ -557,9 +572,9 @@ pub fn run() {
             launch_instance,
             open_instance_folder,
             list_instance_contents,
-            list_instance_contents,
             set_pinned_instance,
             set_discord_rpc,
+            update_discord_rpc,
             upload_skin,
             purge_cache
         ])

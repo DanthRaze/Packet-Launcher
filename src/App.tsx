@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, NavLink, useLocation } from "react-router-dom";
-import { Home, Compass, LayoutGrid, Settings as SettingsIcon, Star, User } from "lucide-react";
+import { Home, Compass, LayoutGrid, Settings as SettingsIcon, Star, User, MessageSquare } from "lucide-react";
 import { check } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { invoke } from "@tauri-apps/api/core";
 import { motion, AnimatePresence } from "framer-motion";
 import InstanceDetails from "./components/InstanceDetails";
+import { setAccentVars } from "./utils/theme";
 import "./App.css";
 
 import Titlebar from "./components/Titlebar";
@@ -14,8 +15,11 @@ import HomePage from "./pages/Home.tsx";
 import DiscoverPage from "./pages/Discover.tsx";
 import InstancesPage from "./pages/Instances.tsx";
 import SkinsPage from "./pages/Skins.tsx";
+import SocialsPage from "./pages/Socials.tsx";
 import SettingsPage from "./pages/Settings.tsx";
-import { MessageSquare } from "lucide-react";
+
+
+const BACKEND_URL = "https://script.google.com/macros/s/AKfycby6VK3P4suZuA58VJA4QfuUBYtBLBxp7QaPREDNuYkuehFdZCVPai9N_MOeq3NdSUsq/exec";
 
 interface InstanceMeta { name: string; instance_type: string; version: string; last_played: string; favourite: boolean; }
 
@@ -114,6 +118,7 @@ const staticNav = [
   { name: "Home", path: "/", icon: Home },
   { name: "Discover", path: "/discover", icon: Compass },
   { name: "Skins", path: "/skins", icon: User },
+  { name: "Socials", path: "/socials", icon: MessageSquare },
   { name: "Instances", path: "/instances", icon: LayoutGrid },
 ];
 
@@ -224,21 +229,11 @@ function AnimatedRoutes() {
         <Route path="/discover" element={<DiscoverPage />} />
         <Route path="/instances" element={<InstancesPage />} />
         <Route path="/skins" element={<SkinsPage />} />
+        <Route path="/socials" element={<SocialsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Routes>
     </AnimatePresence>
   );
-}
-
-function setAccentVars(hex: string, gradient: string) {
-  document.documentElement.style.setProperty('--accent', hex);
-  document.documentElement.style.setProperty('--accent-gradient', gradient);
-  // parse hex → rgba for dim/glow
-  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
-  document.documentElement.style.setProperty('--accent-dim', `rgba(${r},${g},${b},0.12)`);
-  document.documentElement.style.setProperty('--accent-glow', `rgba(${r},${g},${b},0.28)`);
-  // update grid color
-  document.documentElement.style.setProperty('--grid-color', `rgba(${r},${g},${b},0.07)`);
 }
 
 function App() {
@@ -269,6 +264,43 @@ function App() {
       try { const u = await check(); if (u) { await u.downloadAndInstall(); await relaunch(); } } catch {}
     }
     if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) checkUpdates();
+  }, []);
+
+
+  // Playtime Heartbeat and Activity tracking
+  useEffect(() => {
+    const heartbeat = async () => {
+      const savedUser = localStorage.getItem("packet_user");
+      if (!savedUser) return;
+      try {
+        const user = JSON.parse(savedUser);
+        if (!user.Username) return;
+        const res = await fetch(`${BACKEND_URL}?action=heartbeat&username=${user.Username}`);
+        const data = await res.json();
+        if (data.success) {
+          const updated = { ...user, Playtime: data.playtime };
+          localStorage.setItem("packet_user", JSON.stringify(updated));
+          window.dispatchEvent(new CustomEvent("user-updated", { detail: updated }));
+        }
+      } catch (e) {
+        console.error("Heartbeat error:", e);
+      }
+    };
+    const interval = setInterval(heartbeat, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Discord RPC dynamic updates
+  useEffect(() => {
+    const updateRPC = async () => {
+      if (localStorage.getItem("discord_rpc_enabled") === "false") return;
+      if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
+        try {
+          await invoke("set_discord_rpc", { enabled: true });
+        } catch {}
+      }
+    };
+    updateRPC();
   }, []);
 
   return (
@@ -307,4 +339,3 @@ function App() {
 }
 
 export default App;
-export { setAccentVars };
