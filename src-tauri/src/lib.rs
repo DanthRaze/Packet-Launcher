@@ -14,10 +14,12 @@ use futures_util::StreamExt;
 use discord_rich_presence::{DiscordIpc, DiscordIpcClient};
 use std::sync::Mutex;
 use lazy_static::lazy_static;
+use base64::Engine as _;
 
 // ─── Global State ────────────────────────────────────────────────────────────
 lazy_static! {
     static ref DISCORD_CLIENT: Mutex<Option<DiscordIpcClient>> = Mutex::new(None);
+    static ref RUNNING_PROCESS: Mutex<Option<std::process::Child>> = Mutex::new(None);
 }
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -51,6 +53,7 @@ struct DownloadProgress {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
 
 fn data_dir() -> PathBuf {
     let p = ProjectDirs::from("com", "packetlauncher", "app")
@@ -153,6 +156,21 @@ pub struct ContentMeta {
     pub description: Option<String>,
 }
 
+#[derive(Serialize, Clone)]
+pub struct ScreenshotInfo {
+    pub filename: String,
+    pub instance_name: String,
+    pub file_path: String,
+    pub modified_time: u64,
+    pub file_size: u64,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct LaunchStatus {
+    pub status: String,
+    pub instance_name: String,
+}
+
 #[command]
 fn list_instance_contents(name: String, folder: String) -> Result<Vec<ContentMeta>, String> {
     let dir = instances_dir().join(&name).join(&folder);
@@ -187,6 +205,102 @@ fn list_instance_contents(name: String, folder: String) -> Result<Vec<ContentMet
         }
     }
     Ok(result)
+}
+
+#[command]
+fn list_screenshots() -> Result<Vec<ScreenshotInfo>, String> {
+    let mut screenshots = Vec::new();
+    
+    if let Ok(instances_entries) = fs::read_dir(instances_dir()) {
+        for instance_entry in instances_entries.flatten() {
+            let instance_name = instance_entry.file_name().to_string_lossy().to_string();
+            let screenshots_dir = instance_entry.path().join("screenshots");
+            
+            if screenshots_dir.exists() {
+                if let Ok(screenshot_entries) = fs::read_dir(screenshots_dir) {
+                    for screenshot_entry in screenshot_entries.flatten() {
+                        let path = screenshot_entry.path();
+                        if path.is_file() {
+                            let filename = path.file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or("unknown")
+                                .to_string();
+                            
+                            // Only include image files
+                            if filename.to_lowercase().ends_with(".png") || 
+                               filename.to_lowercase().ends_with(".jpg") || 
+                               filename.to_lowercase().ends_with(".jpeg") {
+                                
+                                let metadata = fs::metadata(&path).map_err(|e| e.to_string())?;
+                                let modified_time = metadata.modified()
+                                    .map(|t| t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs())
+                                    .unwrap_or(0);
+                                let file_size = metadata.len();
+                                
+                                screenshots.push(ScreenshotInfo {
+                                    filename,
+                                    instance_name: instance_name.clone(),
+                                    file_path: path.to_string_lossy().to_string(),
+                                    modified_time,
+                                    file_size,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Sort by modified time (newest first)
+    screenshots.sort_by(|a, b| b.modified_time.cmp(&a.modified_time));
+    Ok(screenshots)
+}
+
+
+#[command]
+fn stop_game() -> Result<(), String> {
+    let mut process = RUNNING_PROCESS.lock().unwrap();
+    if let Some(mut child) = process.take() {
+        match child.kill() {
+            Ok(_) => Ok(()),
+            Err(e) => Err(format!("Failed to stop game: {}", e))
+        }
+    } else {
+        Err("No game is currently running".into())
+    }
+}
+
+#[command]
+fn is_game_running() -> Result<bool, String> {
+    let process = RUNNING_PROCESS.lock().unwrap();
+    Ok(process.is_some())
+}
+
+#[command]
+fn delete_file(path: String) -> Result<(), String> {
+    fs::remove_file(path).map_err(|e| e.to_string())
+}
+
+#[command]
+async fn get_screenshot_base64(file_path: String) -> Result<String, String> {
+    if !std::path::Path::new(&file_path).exists() {
+        return Err("Screenshot file not found".into());
+    }
+    
+    let image_data = fs::read(&file_path).map_err(|e| e.to_string())?;
+    let base64_string = base64::engine::general_purpose::STANDARD.encode(&image_data);
+    
+    // Determine file extension for data URL
+    let extension = if file_path.to_lowercase().ends_with(".png") {
+        "png"
+    } else if file_path.to_lowercase().ends_with(".jpg") || file_path.to_lowercase().ends_with(".jpeg") {
+        "jpg"
+    } else {
+        "png" // default
+    };
+    
+    Ok(format!("data:image/{};base64,{}", extension, base64_string))
 }
 
 // ─── Downloads ───────────────────────────────────────────────────────────────
@@ -434,17 +548,35 @@ fn delete_saved_profile() -> Result<(), String> {
     Ok(())
 }
 
+
 // ─── Launch Game ─────────────────────────────────────────────────────────────
 
 #[command]
-async fn launch_instance(app: AppHandle, instance_name: String, allocated_ram_gb: u32) -> Result<(), String> {
-    let profile_path = data_dir().join("profile.json");
-    if !profile_path.exists() { return Err("Not logged in. Sign in with Microsoft first.".into()); }
-    let profile: MinecraftProfile = serde_json::from_str(&fs::read_to_string(&profile_path).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+async fn launch_instance(app: AppHandle, instance_name: String, allocated_ram_gb: u32, developer_mode: bool) -> Result<(), String> {
+    
+    let profile: MinecraftProfile = if developer_mode {
+        // Use offline/developer credentials for testing
+        MinecraftProfile {
+            uuid: "01234567-89ab-cdef-0123-456789abcdef".to_string(),
+            username: "Developer".to_string(),
+            skin_url: "https://mineskin.eu/skin/steve".to_string(),
+            access_token: "offline_token".to_string(),
+        }
+    } else {
+        // Normal authentication flow
+        let profile_path = data_dir().join("profile.json");
+        if !profile_path.exists() { 
+            return Err("Not logged in. Sign in with Microsoft first.".into()); 
+        }
+        serde_json::from_str(&fs::read_to_string(&profile_path).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?
+    };
 
     let instance_dir = instances_dir().join(&instance_name);
     let meta: InstanceMeta = serde_json::from_str(&fs::read_to_string(instance_dir.join("instance.json")).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
     let version = &meta.version;
+    
+    println!("=== LAUNCHING INSTANCE: {} (type: {}, version: {}) ===", instance_name, meta.instance_type, version);
+    println!("Debug: Native library extraction starting...");
 
     let version_dir = data_dir().join("versions").join(version);
     let libraries_dir = data_dir().join("libraries");
@@ -482,54 +614,559 @@ async fn launch_instance(app: AppHandle, instance_name: String, allocated_ram_gb
         let _ = app.emit("download_progress", DownloadProgress { id: format!("mc|{}", version), name: format!("Minecraft {}", version), downloaded: 1, total: 1 });
     }
 
+    // Download assets index file
+    let assets_index_name = vdata["assetIndex"]["id"].as_str().unwrap_or("1.8.9");
+    let assets_index_path = assets_dir.join("indexes").join(format!("{}.json", assets_index_name));
+    fs::create_dir_all(assets_dir.join("indexes")).ok();
+    
+    if !assets_index_path.exists() {
+        if let Some(assets_index_url) = vdata["assetIndex"]["url"].as_str() {
+            println!("Downloading assets index: {}", assets_index_name);
+            let assets_bytes = http.get(assets_index_url).send().await.map_err(|e| e.to_string())?.bytes().await.map_err(|e| e.to_string())?;
+            fs::write(&assets_index_path, &assets_bytes).ok();
+            println!("Downloaded assets index: {}", assets_index_name);
+        }
+    }
+
     // Libraries
     let mut classpath = vec![jar_path.to_string_lossy().to_string()];
+    
+    // Add mod loader JARs based on instance type
+    match meta.instance_type.as_str() {
+        "Fabric" => {
+            let fabric_jar = libraries_dir.join("fabric-loader-0.16.10.jar");
+            if !fabric_jar.exists() {
+                let fabric_url = "https://maven.fabricmc.net/net/fabricmc/fabric-loader/0.16.10/fabric-loader-0.16.10.jar";
+                let _ = app.emit("download_progress", DownloadProgress { id: "fabric-loader".to_string(), name: "Fabric Loader 0.16.10".to_string(), downloaded: 0, total: 1 });
+                let fabric_bytes = http.get(fabric_url).send().await.map_err(|e| e.to_string())?.bytes().await.map_err(|e| e.to_string())?;
+                fs::write(&fabric_jar, &fabric_bytes).ok();
+                let _ = app.emit("download_progress", DownloadProgress { id: "fabric-loader".to_string(), name: "Fabric Loader 0.16.10".to_string(), downloaded: 1, total: 1 });
+            }
+            classpath.push(fabric_jar.to_string_lossy().to_string());
+        }
+        "Forge" => {
+            // For Forge, we'd need to download the specific Forge version for the Minecraft version
+            // For now, we'll use a placeholder approach
+            println!("Forge support: Would download Forge for version {}", version);
+            // In a full implementation, you'd:
+            // 1. Fetch Forge version list from https://files.minecraftforge.net/net/minecraftforge/forge/
+            // 2. Download the appropriate Forge installer
+            // 3. Extract and add to classpath
+        }
+        "Quilt" => {
+            let quilt_jar = libraries_dir.join("quilt-loader-0.25.1.jar");
+            if !quilt_jar.exists() {
+                let quilt_url = "https://maven.quiltmc.org/repository/release/org/quiltmc/quilt-loader/0.25.1/quilt-loader-0.25.1.jar";
+                let _ = app.emit("download_progress", DownloadProgress { id: "quilt-loader".to_string(), name: "Quilt Loader 0.25.1".to_string(), downloaded: 0, total: 1 });
+                let quilt_bytes = http.get(quilt_url).send().await.map_err(|e| e.to_string())?.bytes().await.map_err(|e| e.to_string())?;
+                fs::write(&quilt_jar, &quilt_bytes).ok();
+                let _ = app.emit("download_progress", DownloadProgress { id: "quilt-loader".to_string(), name: "Quilt Loader 0.25.1".to_string(), downloaded: 1, total: 1 });
+            }
+            classpath.push(quilt_jar.to_string_lossy().to_string());
+        }
+        _ => {} // Vanilla - no additional loader needed
+    }
+    
+    // Build classpath and extract native libraries
+    let mut native_lib_dirs = Vec::new();
+    println!("Starting native library extraction...");
+    
     if let Some(libs) = vdata["libraries"].as_array() {
-        for lib in libs {
+        println!("Found {} libraries in version manifest", libs.len());
+        for (_i, lib) in libs.iter().enumerate() {
             if let Some(artifact) = lib["downloads"]["artifact"].as_object() {
                 let rel_path = artifact["path"].as_str().unwrap_or("");
-                let lib_path = libraries_dir.join(rel_path);
-                if !lib_path.exists() {
-                    if let Some(url) = artifact["url"].as_str() {
-                        fs::create_dir_all(lib_path.parent().unwrap()).ok();
-                        if let Ok(resp) = http.get(url).send().await {
-                            if let Ok(b) = resp.bytes().await { fs::write(&lib_path, b).ok(); }
+                
+                // Handle regular JAR libraries (skip native libraries from classpath)
+                if !rel_path.contains("natives") {
+                    let lib_path = libraries_dir.join(rel_path);
+                    if !lib_path.exists() {
+                        if let Some(url) = artifact["url"].as_str() {
+                            fs::create_dir_all(lib_path.parent().unwrap()).ok();
+                            if let Ok(resp) = http.get(url).send().await {
+                                if let Ok(b) = resp.bytes().await { fs::write(&lib_path, b).ok(); }
+                            }
+                        }
+                    }
+                    if lib_path.exists() { classpath.push(lib_path.to_string_lossy().to_string()); }
+                }
+            }
+        }
+    }
+    
+    // Fallback: Extract native libraries from existing native JARs
+    println!("Using fallback native library extraction...");
+    println!("Detected OS: {}, Arch: {}", 
+        if cfg!(target_os = "macos") { "macos" } else if cfg!(target_os = "windows") { "windows" } else { "linux" },
+        if cfg!(target_arch = "aarch64") { "aarch64" } else if cfg!(target_arch = "x86_64") { "x86_64" } else { "unknown" });
+    
+    let native_key = if cfg!(target_os = "macos") {
+        if cfg!(target_arch = "aarch64") {
+            "natives-macos-arm64"
+        } else {
+            "natives-macos"
+        }
+    } else if cfg!(target_os = "windows") {
+        if cfg!(target_arch = "aarch64") {
+            "natives-windows-arm64"
+        } else {
+            "natives-windows"
+        }
+    } else if cfg!(target_os = "linux") {
+        "natives-linux"
+    } else {
+        "natives-unknown"
+    };
+    
+    let native_path = libraries_dir.join(format!("natives/{}", native_key));
+    fs::create_dir_all(&native_path).ok();
+    
+    // Directly extract from known native JAR paths - cross-platform support
+    let native_jar_paths = if cfg!(target_os = "macos") {
+        if cfg!(target_arch = "aarch64") {
+            vec![
+                ("lwjgl-3.4.1", "lwjgl-3.4.1-natives-macos-arm64.jar"),
+                ("lwjgl-glfw-3.4.1", "lwjgl-glfw-3.4.1-natives-macos-arm64.jar"),
+                ("lwjgl-openal-3.4.1", "lwjgl-openal-3.4.1-natives-macos-arm64.jar"),
+                ("lwjgl-opengl-3.4.1", "lwjgl-opengl-3.4.1-natives-macos-arm64.jar"),
+                ("lwjgl-stb-3.4.1", "lwjgl-stb-3.4.1-natives-macos-arm64.jar"),
+                ("lwjgl-tinyfd-3.4.1", "lwjgl-tinyfd-3.4.1-natives-macos-arm64.jar"),
+                ("lwjgl-jemalloc-3.4.1", "lwjgl-jemalloc-3.4.1-natives-macos-arm64.jar"),
+                ("lwjgl-freetype-3.4.1", "lwjgl-freetype-3.4.1-natives-macos-arm64.jar")
+            ]
+        } else {
+            vec![
+                ("lwjgl-3.4.1", "lwjgl-3.4.1-natives-macos.jar"),
+                ("lwjgl-glfw-3.4.1", "lwjgl-glfw-3.4.1-natives-macos.jar"),
+                ("lwjgl-openal-3.4.1", "lwjgl-openal-3.4.1-natives-macos.jar"),
+                ("lwjgl-opengl-3.4.1", "lwjgl-opengl-3.4.1-natives-macos.jar"),
+                ("lwjgl-stb-3.4.1", "lwjgl-stb-3.4.1-natives-macos.jar"),
+                ("lwjgl-tinyfd-3.4.1", "lwjgl-tinyfd-3.4.1-natives-macos.jar"),
+                ("lwjgl-jemalloc-3.4.1", "lwjgl-jemalloc-3.4.1-natives-macos.jar"),
+                ("lwjgl-freetype-3.4.1", "lwjgl-freetype-3.4.1-natives-macos.jar")
+            ]
+        }
+    } else if cfg!(target_os = "windows") {
+        if cfg!(target_arch = "aarch64") {
+            vec![
+                ("lwjgl-3.4.1", "lwjgl-3.4.1-natives-windows-arm64.jar"),
+                ("lwjgl-glfw-3.4.1", "lwjgl-glfw-3.4.1-natives-windows-arm64.jar"),
+                ("lwjgl-openal-3.4.1", "lwjgl-openal-3.4.1-natives-windows-arm64.jar"),
+                ("lwjgl-opengl-3.4.1", "lwjgl-opengl-3.4.1-natives-windows-arm64.jar"),
+                ("lwjgl-stb-3.4.1", "lwjgl-stb-3.4.1-natives-windows-arm64.jar"),
+                ("lwjgl-tinyfd-3.4.1", "lwjgl-tinyfd-3.4.1-natives-windows-arm64.jar"),
+                ("lwjgl-jemalloc-3.4.1", "lwjgl-jemalloc-3.4.1-natives-windows-arm64.jar"),
+                ("lwjgl-freetype-3.4.1", "lwjgl-freetype-3.4.1-natives-windows-arm64.jar")
+            ]
+        } else {
+            vec![
+                ("lwjgl-3.4.1", "lwjgl-3.4.1-natives-windows.jar"),
+                ("lwjgl-glfw-3.4.1", "lwjgl-glfw-3.4.1-natives-windows.jar"),
+                ("lwjgl-openal-3.4.1", "lwjgl-openal-3.4.1-natives-windows.jar"),
+                ("lwjgl-opengl-3.4.1", "lwjgl-opengl-3.4.1-natives-windows.jar"),
+                ("lwjgl-stb-3.4.1", "lwjgl-stb-3.4.1-natives-windows.jar"),
+                ("lwjgl-tinyfd-3.4.1", "lwjgl-tinyfd-3.4.1-natives-windows.jar"),
+                ("lwjgl-jemalloc-3.4.1", "lwjgl-jemalloc-3.4.1-natives-windows.jar"),
+                ("lwjgl-freetype-3.4.1", "lwjgl-freetype-3.4.1-natives-windows.jar")
+            ]
+        }
+    } else if cfg!(target_os = "linux") {
+        vec![
+            ("lwjgl-3.4.1", "lwjgl-3.4.1-natives-linux.jar"),
+            ("lwjgl-glfw-3.4.1", "lwjgl-glfw-3.4.1-natives-linux.jar"),
+            ("lwjgl-openal-3.4.1", "lwjgl-openal-3.4.1-natives-linux.jar"),
+            ("lwjgl-opengl-3.4.1", "lwjgl-opengl-3.4.1-natives-linux.jar"),
+            ("lwjgl-stb-3.4.1", "lwjgl-stb-3.4.1-natives-linux.jar"),
+            ("lwjgl-tinyfd-3.4.1", "lwjgl-tinyfd-3.4.1-natives-linux.jar"),
+            ("lwjgl-jemalloc-3.4.1", "lwjgl-jemalloc-3.4.1-natives-linux.jar"),
+            ("lwjgl-freetype-3.4.1", "lwjgl-freetype-3.4.1-natives-linux.jar")
+        ]
+    } else {
+        vec![] // Unsupported platform
+    };
+    
+    println!("Starting native library extraction for platform: {} {}", 
+        if cfg!(target_os = "macos") { "macos" } else if cfg!(target_os = "windows") { "windows" } else { "linux" },
+        if cfg!(target_arch = "aarch64") { "arm64" } else if cfg!(target_arch = "x86_64") { "x86_64" } else { "unknown" });
+
+    // Try to extract from classpath JARs first
+    for jar_path in &classpath {
+        if jar_path.contains("lwjgl") && jar_path.contains("natives") {
+            println!("Found native JAR in classpath: {}", jar_path);
+            
+            match fs::File::open(jar_path) {
+                Ok(file) => {
+                    match zip::ZipArchive::new(file) {
+                        Ok(mut archive) => {
+                            println!("Extracting natives from: {}", jar_path);
+                            let mut extracted_count = 0;
+                            
+                            for i in 0..archive.len() {
+                                if let Ok(mut zip_file) = archive.by_index(i) {
+                                    let file_path_cow = zip_file.mangled_name();
+                                    let file_path = file_path_cow.to_string_lossy();
+                                    
+                                    // Extract native libraries (.dylib, .dll, .so)
+                                    if file_path.ends_with(".dylib") || file_path.ends_with(".dll") || file_path.ends_with(".so") {
+                                        let filename = file_path.split('/').last().unwrap_or(&file_path);
+                                        let out_path = native_path.join(filename);
+                                        
+                                        match fs::File::create(&out_path) {
+                                            Ok(mut out_file) => {
+                                                match std::io::copy(&mut zip_file, &mut out_file) {
+                                                    Ok(_) => {
+                                                        extracted_count += 1;
+                                                        println!("Extracted native: {}", filename);
+                                                    }
+                                                    Err(e) => {
+                                                        println!("Failed to extract {}: {}", filename, e);
+                                                    }
+                                                }
+                                            }
+                                            Err(e) => {
+                                                println!("Failed to create output file {}: {}", filename, e);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            println!("Extracted {} native libraries from {}", extracted_count, jar_path);
+                        }
+                        Err(e) => {
+                            println!("Failed to open JAR {}: {}", jar_path, e);
                         }
                     }
                 }
-                if lib_path.exists() { classpath.push(lib_path.to_string_lossy().to_string()); }
+                Err(e) => {
+                    println!("Failed to open JAR file {}: {}", jar_path, e);
+                }
             }
         }
     }
 
-    let main_class = vdata["mainClass"].as_str().unwrap_or("net.minecraft.client.main.Main");
-    let assets_index = vdata["assetIndex"]["id"].as_str().unwrap_or("18");
-    let sep = if cfg!(windows) { ";" } else { ":" };
-    let cp = classpath.join(sep);
-    let ram = format!("-Xmx{}G", allocated_ram_gb.max(1));
-
-    std::process::Command::new("java")
-        .args([&ram, "-Xms512M", "-cp", &cp, main_class,
-               "--username", &profile.username,
-               "--uuid", &profile.uuid,
-               "--accessToken", &profile.access_token,
-               "--version", version,
-               "--gameDir", &instance_dir.to_string_lossy(),
-               "--assetsDir", &assets_dir.to_string_lossy(),
-               "--assetIndex", assets_index,
-               "--userType", "msa"])
-        .spawn()
-        .map_err(|e| format!("Failed to launch: {}. Is Java 17+ installed?", e))?;
-
-    // Update last_played
-    let mp = instance_dir.join("instance.json");
-    if let Ok(s) = fs::read_to_string(&mp) {
-        if let Ok(mut m) = serde_json::from_str::<InstanceMeta>(&s) {
-            m.last_played = "Just now".into();
-            fs::write(&mp, serde_json::to_string_pretty(&m).unwrap()).ok();
+    // Fallback to hardcoded paths if classpath extraction didn't work
+    if native_path.read_dir().unwrap_or_else(|_| std::fs::read_dir(".").unwrap()).next().is_none() {
+        println!("Classpath extraction failed, trying hardcoded paths...");
+        
+        for (jar_name, jar_filename) in &native_jar_paths {
+            // Construct the full path to the native JAR
+            let jar_path = libraries_dir.join(format!("org/lwjgl/{}/3.4.1/{}", jar_name.replace("-3.4.1", ""), jar_filename));
+            
+            println!("Trying to extract from: {}", jar_path.display());
+            
+            if jar_path.exists() {
+                println!("Found native JAR: {}", jar_filename);
+                
+                // Extract native libraries from this JAR
+                match fs::File::open(&jar_path) {
+                    Ok(file) => {
+                        match zip::ZipArchive::new(file) {
+                            Ok(mut archive) => {
+                                println!("Extracting natives from: {}", jar_filename);
+                                let mut extracted_count = 0;
+                                
+                                for i in 0..archive.len() {
+                                    if let Ok(mut zip_file) = archive.by_index(i) {
+                                        let file_path_cow = zip_file.mangled_name();
+                                        let file_path = file_path_cow.to_string_lossy();
+                                        
+                                        // Extract native libraries (.dylib, .dll, .so)
+                                        if file_path.ends_with(".dylib") || file_path.ends_with(".dll") || file_path.ends_with(".so") {
+                                            let filename = file_path.split('/').last().unwrap_or(&file_path);
+                                            let out_path = native_path.join(filename);
+                                            
+                                            match fs::File::create(&out_path) {
+                                                Ok(mut out_file) => {
+                                                    match std::io::copy(&mut zip_file, &mut out_file) {
+                                                        Ok(_) => {
+                                                            extracted_count += 1;
+                                                            println!("Extracted native: {}", filename);
+                                                        }
+                                                        Err(e) => {
+                                                            println!("Failed to extract {}: {}", filename, e);
+                                                        }
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    println!("Failed to create output file {}: {}", filename, e);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                println!("Extracted {} native libraries from {}", extracted_count, jar_filename);
+                            }
+                            Err(e) => {
+                                println!("Failed to open JAR {}: {}", jar_filename, e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        println!("Failed to open JAR file {}: {}", jar_path.display(), e);
+                    }
+                }
+            } else {
+                println!("Native JAR not found: {}", jar_path.display());
+            }
         }
     }
-    Ok(())
+    
+    if native_path.exists() {
+        native_lib_dirs.push(native_path.to_string_lossy().to_string());
+        println!("Native library extraction completed. Path: {}", native_path.display());
+    } else {
+        println!("No native libraries found!");
+    }
+
+    // Determine main class based on instance type
+    let main_class = match meta.instance_type.as_str() {
+        "Fabric" => "net.fabricmc.loader.impl.launch.knot.Knot",
+        "Quilt" => "org.quiltmc.loader.impl.launch.knot.Knot",
+        "Forge" => {
+            // Forge uses different main classes depending on version
+            // For newer Forge versions, it uses the same as vanilla
+            vdata["mainClass"].as_str().unwrap_or("net.minecraft.client.main.Main")
+        }
+        _ => vdata["mainClass"].as_str().unwrap_or("net.minecraft.client.main.Main")
+    };
+    
+    let assets_index = vdata["assetIndex"]["id"].as_str().unwrap_or("1.8.9");
+    let sep = if cfg!(windows) { ";" } else { ":" };
+    let _cp = classpath.join(sep);
+    let ram = format!("-Xmx{}G", allocated_ram_gb.max(1));
+    
+    println!("Main class: {}", main_class);
+    println!("Classpath entries: {}", classpath.len());
+    println!("Assets index: {}", assets_index);
+
+    // Check if already running
+    {
+        let process = RUNNING_PROCESS.lock().unwrap();
+        if process.is_some() {
+            return Err("A game is already running. Stop it first.".into());
+        }
+    }
+
+    // Emit launching status
+    println!("Emitting Launching status for instance: {}", instance_name);
+    let launch_status = LaunchStatus { 
+        status: "Launching".to_string(), 
+        instance_name: instance_name.clone() 
+    };
+    println!("Launch status payload: {:?}", launch_status);
+    
+    if let Err(e) = app.emit("tauri://launch_status", launch_status) {
+        eprintln!("Failed to emit launch_status: {}", e);
+    } else {
+        println!("Successfully emitted launch_status event");
+    }
+
+    // Log files for stdout/stderr
+    let log_dir = instance_dir.join("logs");
+    fs::create_dir_all(&log_dir).ok();
+    let _stdout_file = std::fs::File::create(log_dir.join("latest.stdout.log")).map_err(|e| e.to_string())?;
+    let _stderr_file = std::fs::File::create(log_dir.join("latest.stderr.log")).map_err(|e| e.to_string())?;
+
+    // Check if Java is available and get version
+    let java_check = std::process::Command::new("java")
+        .arg("-version")
+        .output();
+    
+    match java_check {
+        Ok(output) => {
+            let version_str = String::from_utf8_lossy(&output.stdout);
+            let error_str = String::from_utf8_lossy(&output.stderr);
+            println!("Java version check - stdout: {}", version_str);
+            println!("Java version check - stderr: {}", error_str);
+            
+            // Java version output often goes to stderr, check both
+            let full_version = format!("{} {}", version_str, error_str);
+            
+            // Look for any Java 17+ version (including newer versions)
+            if full_version.contains("17") || full_version.contains("18") || full_version.contains("19") || full_version.contains("20") || full_version.contains("21") {
+                println!("Java version check passed - found compatible version");
+                
+                // Build Java arguments
+                let mut java_args: Vec<String> = vec![
+                    ram.clone(),
+                    "-Xms512M".to_string(),
+                    "-XstartOnFirstThread".to_string(),
+                    "--enable-native-access=ALL-UNNAMED".to_string()
+                ];
+                
+                // Add native library path if we have native libraries
+                if !native_lib_dirs.is_empty() {
+                    let lib_path = native_lib_dirs.join(":");
+                    let lib_path_arg = format!("-Djava.library.path={}", lib_path);
+                    java_args.push(lib_path_arg);
+                    println!("Adding native library path: {}", lib_path);
+                } else {
+                    println!("Warning: No native libraries found! Using Java's built-in library loading...");
+                    // For macOS, we can try without explicit native library path
+                    // Java should find the libraries in the classpath
+                }
+                
+                // Add classpath and main arguments
+                let game_dir_str = instance_dir.to_string_lossy();
+                let assets_dir_str = assets_dir.to_string_lossy();
+                
+                java_args.extend([
+                    "-cp".to_string(),
+                    _cp.clone(),
+                    main_class.to_string(),
+                    "--username".to_string(),
+                    profile.username.clone(),
+                    "--uuid".to_string(),
+                    profile.uuid.clone(),
+                    "--accessToken".to_string(),
+                    profile.access_token.clone(),
+                    "--version".to_string(),
+                    version.to_string(),
+                    "--gameDir".to_string(),
+                    game_dir_str.to_string(),
+                    "--assetsDir".to_string(),
+                    assets_dir_str.to_string(),
+                    "--assetIndex".to_string(),
+                    assets_index.to_string(),
+                    "--userType".to_string(),
+                    if developer_mode { "offline" } else { "msa" }.to_string()
+                ]);
+                
+                println!("Launching Java with command:");
+                let command_str = java_args.join(" ");
+                println!("java {}", command_str);
+                
+                let child = std::process::Command::new("java")
+                    .args(&java_args)
+                    .stdout(std::process::Stdio::from(_stdout_file))
+                    .stderr(std::process::Stdio::from(_stderr_file))
+                    .spawn()
+                    .map_err(|e| format!("Failed to launch: {}. Check Java installation and logs.", e))?;
+
+                // Get process ID for global tracking
+                let process_id = child.id();
+
+                // Store the process globally
+                {
+                    let mut process = RUNNING_PROCESS.lock().unwrap();
+                    *process = Some(child);
+                }
+
+                // Monitor the process and emit running status when actually ready
+                let app_clone = app.clone();
+                let instance_name_clone = instance_name.clone();
+                let process_id_for_monitor = process_id;
+                thread::spawn(move || {
+                    // Wait a bit for initial startup
+                    thread::sleep(Duration::from_secs(3));
+                    
+                    // Check if process is actually still running
+                    let mut is_actually_running = false;
+                    if cfg!(unix) {
+                        use std::process::Command;
+                        if let Ok(output) = Command::new("kill")
+                            .arg("-0")
+                            .arg(process_id_for_monitor.to_string())
+                            .output() {
+                            is_actually_running = output.status.success();
+                        }
+                    } else {
+                        // Windows: check if we can still access the process
+                        // For now, assume it's running after 3 seconds
+                        is_actually_running = true;
+                    }
+                    
+                    if is_actually_running {
+                        println!("Emitting Running status for instance: {}", instance_name_clone);
+                        let running_status = LaunchStatus { 
+                            status: "Running".to_string(), 
+                            instance_name: instance_name_clone.clone() 
+                        };
+                        println!("Running status payload: {:?}", running_status);
+                        if let Err(e) = app_clone.emit("tauri://launch_status", running_status) {
+                            eprintln!("Failed to emit running status: {}", e);
+                        } else {
+                            println!("Successfully emitted running status event");
+                        }
+                    } else {
+                        // Process died during startup
+                        println!("Process died during startup, emitting Error status");
+                        let error_status = LaunchStatus { 
+                            status: "Error".to_string(), 
+                            instance_name: instance_name_clone.clone() 
+                        };
+                        let _ = app_clone.emit("tauri://launch_status", error_status);
+                        
+                        // Clear the global process
+                        let mut process = RUNNING_PROCESS.lock().unwrap();
+                        *process = None;
+                        return;
+                    }
+                    
+                    // Continue monitoring for process completion
+                    loop {
+                        {
+                            let process = RUNNING_PROCESS.lock().unwrap();
+                            if process.is_none() {
+                                // Process was manually stopped
+                                break;
+                            }
+                        }
+                        
+                        // Check if process is still running
+                        let mut is_still_running = false;
+                        if cfg!(unix) {
+                            use std::process::Command;
+                            if let Ok(output) = Command::new("kill")
+                                .arg("-0")
+                                .arg(process_id_for_monitor.to_string())
+                                .output() {
+                                is_still_running = output.status.success();
+                            }
+                        } else {
+                            // Windows: simple sleep check for now
+                            thread::sleep(Duration::from_secs(1));
+                            continue;
+                        }
+                        
+                        if !is_still_running {
+                            break;
+                        }
+                        
+                        thread::sleep(Duration::from_millis(500));
+                    }
+
+                    // Clear the global process and emit stopped status
+                    {
+                        let mut process = RUNNING_PROCESS.lock().unwrap();
+                        *process = None;
+                    }
+                    
+                    let _ = app_clone.emit("tauri://launch_status", LaunchStatus { 
+                        status: "Stopped".to_string(), 
+                        instance_name: instance_name_clone 
+                    });
+                });
+
+                // Update last_played
+                let mp = instance_dir.join("instance.json");
+                if let Ok(s) = fs::read_to_string(&mp) {
+                    if let Ok(mut m) = serde_json::from_str::<InstanceMeta>(&s) {
+                        m.last_played = "Just now".into();
+                        fs::write(&mp, serde_json::to_string_pretty(&m).unwrap()).ok();
+                    }
+                }
+                return Ok(());
+            } else {
+                return Err(format!("Java 17 or higher is required to run Minecraft. Found: {}. Please install Java 17+.", full_version.trim()));
+            }
+        }
+        Err(e) => {
+            return Err(format!("Java not found: {}. Please install Java 17+.", e));
+        }
+    }
 }
 
 // ─── System ──────────────────────────────────────────────────────────────────
@@ -576,7 +1213,12 @@ pub fn run() {
             set_discord_rpc,
             update_discord_rpc,
             upload_skin,
-            purge_cache
+            purge_cache,
+            list_screenshots,
+            get_screenshot_base64,
+            stop_game,
+            is_game_running,
+            delete_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

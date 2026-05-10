@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { User, Users, UserPlus, LogIn, LogOut, Shield, Clock, Gamepad, Star, Check, X, Send, MessageSquare } from "lucide-react";
+import { Send, User, Shield, Star, X, Users, Trash2, LogIn, UserPlus, Clock, LogOut, Camera, MessageSquare, Gamepad, Check } from "lucide-react";
+import { convertFileSrc } from "@tauri-apps/api/core";
 
 const BACKEND_URL = "https://script.google.com/macros/s/AKfycby6VK3P4suZuA58VJA4QfuUBYtBLBxp7QaPREDNuYkuehFdZCVPai9N_MOeq3NdSUsq/exec";
 
@@ -31,6 +32,14 @@ interface ChatMessage {
   receiver: string;
   msg: string;
   time: string;
+}
+
+interface ScreenshotInfo {
+  filename: string;
+  instance_name: string;
+  file_path: string;
+  modified_time: number;
+  file_size: number;
 }
 
 const NAMETAG_EFFECTS = [
@@ -93,7 +102,7 @@ export default function Socials() {
       return null;
     }
   });
-  const [activeTab, setActiveTab] = useState<"friends" | "requests" | "account">("friends");
+  const [activeTab, setActiveTab] = useState<"friends" | "requests" | "screenshots" | "account">("friends");
   const [friends, setFriends] = useState<Friend[]>([]);
   const [requests, setRequests] = useState<Friend[]>([]);
   const [loadingMsg, setLoadingMsg] = useState<string | null>(null);
@@ -113,6 +122,12 @@ export default function Socials() {
 
   const [addFriendName, setAddFriendName] = useState("");
 
+  // Screenshot state
+  const [screenshots, setScreenshots] = useState<ScreenshotInfo[]>([]);
+  const [selectedScreenshot, setSelectedScreenshot] = useState<ScreenshotInfo | null>(null);
+  const [screenshotPreview, setScreenshotPreview] = useState<string | null>(null);
+  const [loadingScreenshots, setLoadingScreenshots] = useState(false);
+
   const fetchSocialData = async () => {
     if (!user) return;
     try {
@@ -123,6 +138,72 @@ export default function Socials() {
     } catch (e) {
       console.error("Failed to fetch social data", e);
     }
+  };
+
+  const loadScreenshots = async () => {
+    if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const screenshots = await invoke<ScreenshotInfo[]>("list_screenshots");
+        setScreenshots(screenshots);
+      } catch (e) {
+        console.error("Failed to load screenshots:", e);
+      }
+    }
+  };
+
+  const deleteScreenshot = async (screenshot: ScreenshotInfo) => {
+    if (!confirm(`Are you sure you want to delete "${screenshot.filename}"?`)) return;
+    
+    if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("delete_file", { path: screenshot.file_path });
+        loadScreenshots(); // Refresh the list
+      } catch (e) {
+        console.error("Failed to delete screenshot:", e);
+        alert("Failed to delete screenshot");
+      }
+    }
+  };
+
+  const fetchScreenshots = async () => {
+    if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
+      setLoadingScreenshots(true);
+      await loadScreenshots();
+      setLoadingScreenshots(false);
+    }
+  };
+
+  const loadScreenshotPreview = async (screenshot: ScreenshotInfo) => {
+    setSelectedScreenshot(screenshot);
+    setScreenshotPreview(null);
+    if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const base64 = await invoke<string>("get_screenshot_base64", { filePath: screenshot.file_path });
+        if (base64 && base64.startsWith("data:image")) {
+          setScreenshotPreview(base64);
+        } else {
+          console.error("Invalid screenshot base64 data");
+        }
+      } catch (e) {
+        console.error("Failed to load screenshot preview", e);
+      }
+    }
+  };
+
+  // Helper to get accessible image URL for grid thumbnails
+  const getScreenshotThumbnailUrl = (filePath: string) => {
+    if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
+      try {
+        return convertFileSrc(filePath);
+      } catch (e) {
+        console.error("convertFileSrc failed:", e);
+        return filePath;
+      }
+    }
+    return filePath;
   };
 
   const fetchMessages = async () => {
@@ -160,6 +241,12 @@ export default function Socials() {
   }, [activeChat]);
 
   useEffect(() => {
+    if (activeTab === "screenshots") {
+      fetchScreenshots();
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
     if (chatScrollRef.current) {
       chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
     }
@@ -168,6 +255,7 @@ export default function Socials() {
   const handleAuth = async () => {
     setLoadingMsg(isLogin ? "Authenticating..." : "Creating Account...");
     setAuthError("");
+    
     try {
       const action = isLogin ? "login" : "signup";
       const res = await fetch(`${BACKEND_URL}?action=${action}&username=${username}&password=${password}`);
@@ -355,6 +443,7 @@ export default function Socials() {
           {[
             { id: "friends", label: "Friends", icon: Users },
             { id: "requests", label: "Requests", icon: UserPlus, count: requests.length },
+            { id: "screenshots", label: "Screenshots", icon: Camera },
             { id: "account", label: "Account", icon: User }
           ].map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id as any)}
@@ -450,6 +539,78 @@ export default function Socials() {
             </motion.div>
           )}
 
+          {activeTab === "screenshots" && (
+            <motion.div key="screenshots" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }} className="space-y-6">
+              {loadingScreenshots ? (
+                <div className="py-20 flex flex-col items-center justify-center text-white/20">
+                  <Camera size={48} className="mb-4 opacity-10 animate-pulse" />
+                  <p className="text-sm font-medium">Loading screenshots...</p>
+                </div>
+              ) : screenshots.length === 0 ? (
+                <div className="py-20 flex flex-col items-center text-white/20">
+                  <Camera size={48} className="mb-4 opacity-10" />
+                  <p className="text-sm font-medium mb-2">No screenshots found</p>
+                  <p className="text-xs text-white/10">Take some screenshots in Minecraft and they'll appear here!</p>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-lg font-bold text-white">Your Screenshots</h3>
+                      <p className="text-xs text-white/40 mt-1">{screenshots.length} screenshots from all instances</p>
+                    </div>
+                    <button onClick={fetchScreenshots} className="text-xs font-bold text-accent hover:text-accent/80 transition-colors">
+                      Refresh
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                    {screenshots.map((screenshot, index) => (
+                      <motion.div
+                        key={`${screenshot.filename}-${index}`}
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ delay: index * 0.05 }}
+                        className="group relative aspect-square bg-[#111113] border border-white/5 rounded-sm overflow-hidden cursor-pointer hover:border-accent/30 transition-all"
+                        onClick={() => loadScreenshotPreview(screenshot)}
+                      >
+                        <img
+                          src={getScreenshotThumbnailUrl(screenshot.file_path)}
+                          alt={screenshot.filename}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          loading="lazy"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="absolute bottom-0 left-0 right-0 p-2">
+                            <p className="text-[10px] font-bold text-white truncate">{screenshot.filename}</p>
+                            <p className="text-[9px] text-white/60">{screenshot.instance_name}</p>
+                          </div>
+                        </div>
+                        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                          <div className="bg-black/60 backdrop-blur-sm rounded px-2 py-1">
+                            <p className="text-[9px] text-white">
+                              {(screenshot.file_size / 1024 / 1024).toFixed(1)} MB
+                            </p>
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteScreenshot(screenshot);
+                            }}
+                            className="p-1 bg-red-500/20 text-red-400 hover:bg-red-500/30 rounded transition-colors"
+                            title="Delete Screenshot"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </motion.div>
+          )}
+
           {activeTab === "account" && (
             <motion.div key="account" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }} className="max-w-4xl space-y-8">
               <div className={`p-6 rounded-sm border ${user.Playtime >= 2880 ? 'bg-emerald-500/5 border-emerald-500/10' : 'bg-accent/5 border-accent/10'}`}>
@@ -542,14 +703,54 @@ export default function Socials() {
                   <MessageSquare size={32} className="mb-2 opacity-10" />
                   <p className="text-[10px] font-bold uppercase tracking-widest">No messages yet</p>
                 </div>
-              ) : messages.map((m, i) => (
-                <div key={i} className={`flex flex-col ${m.sender === user.Username ? 'items-end' : 'items-start'}`}>
-                  <div className={`max-w-[85%] p-3 rounded-sm text-xs ${m.sender === user.Username ? 'bg-accent text-white shadow-lg shadow-accent/20' : 'bg-white/5 text-white/80 border border-white/5'}`}>
-                    {m.msg}
+              ) : messages.map((m, i) => {
+                // Check if message contains an image
+                const isImageMessage = m.msg.includes('[IMAGE:]') && m.msg.includes('[:IMAGE]');
+                
+                if (isImageMessage) {
+                  const parts = m.msg.split('[IMAGE:]');
+                  const imageAndFilename = parts[1] || '';
+                  const imageParts = imageAndFilename.split('[:IMAGE]');
+                  const imageData = imageParts[0] || '';
+                  const filename = imageParts[1] || 'screenshot.png';
+                  
+                  return (
+                    <div key={i} className={`flex flex-col ${m.sender === user.Username ? 'items-end' : 'items-start'}`}>
+                      <div className={`max-w-[85%] rounded-sm overflow-hidden ${m.sender === user.Username ? 'bg-accent/10 border border-accent/30' : 'bg-white/5 border border-white/10'}`}>
+                        <img 
+                          src={imageData} 
+                          alt={filename}
+                          className="max-w-full rounded-sm cursor-pointer hover:opacity-90 transition-opacity"
+                          onClick={() => {
+                            // Open in preview mode
+                            setSelectedScreenshot({
+                              filename,
+                              instance_name: 'Shared',
+                              file_path: '',
+                              modified_time: Date.now() / 1000,
+                              file_size: 0
+                            });
+                            setScreenshotPreview(imageData);
+                          }}
+                        />
+                        <div className="p-2">
+                          <p className="text-xs text-white/80 italic">{filename}</p>
+                        </div>
+                      </div>
+                      <p className="text-[9px] text-white/20 mt-1 uppercase font-bold">{new Date(m.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                    </div>
+                  );
+                }
+                
+                return (
+                  <div key={i} className={`flex flex-col ${m.sender === user.Username ? 'items-end' : 'items-start'}`}>
+                    <div className={`max-w-[85%] p-3 rounded-sm text-xs ${m.sender === user.Username ? 'bg-accent text-white shadow-lg shadow-accent/20' : 'bg-white/5 text-white/80 border border-white/5'}`}>
+                      {m.msg}
+                    </div>
+                    <p className="text-[9px] text-white/20 mt-1 uppercase font-bold">{new Date(m.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
                   </div>
-                  <p className="text-[9px] text-white/20 mt-1 uppercase font-bold">{new Date(m.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             <div className="p-4 border-t border-white/5 bg-white/[0.02]">
@@ -559,6 +760,69 @@ export default function Socials() {
                 <button onClick={sendMessage} className="p-2 bg-accent text-white rounded-sm hover:bg-accent/90 transition-all active:scale-95"><Send size={16} /></button>
               </div>
             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {selectedScreenshot && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-xl p-4"
+            onClick={() => {
+              setSelectedScreenshot(null);
+              setScreenshotPreview(null);
+            }}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative max-w-4xl max-h-[90vh] bg-[#111113] border border-white/10 rounded-lg overflow-hidden flex items-center justify-center"
+              style={{ minWidth: "300px", minHeight: "200px" }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="absolute top-4 right-4 z-10 flex gap-2">
+                <button
+                  onClick={() => {
+                    setSelectedScreenshot(null);
+                    setScreenshotPreview(null);
+                  }}
+                  className="p-2 bg-white/10 text-white/60 hover:bg-white/20 rounded-lg transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {screenshotPreview ? (
+                <img
+                  src={screenshotPreview}
+                  alt={selectedScreenshot.filename}
+                  className="max-w-full max-h-[85vh] object-contain"
+                />
+              ) : (
+                <div className="flex flex-col items-center gap-3 p-8">
+                  <div className="w-8 h-8 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                  <p className="text-sm text-white/60">Loading screenshot...</p>
+                </div>
+              )}
+
+              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-white font-bold text-sm">{selectedScreenshot.filename}</p>
+                    <p className="text-white/60 text-xs">
+                      {selectedScreenshot.instance_name} • {(selectedScreenshot.file_size / 1024 / 1024).toFixed(1)} MB
+                    </p>
+                  </div>
+                  <div className="text-white/40 text-xs">
+                    {new Date(selectedScreenshot.modified_time * 1000).toLocaleDateString()}
+                  </div>
+                </div>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>

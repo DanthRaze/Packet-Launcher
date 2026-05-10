@@ -12,7 +12,8 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [pinnedInstance, setPinnedInstance] = useState<string | null>(null);
-  const [launching, setLaunching] = useState(false);
+  const [isLaunching, setIsLaunching] = useState(false);
+  const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadProfileAndPinned = async () => {
@@ -36,6 +37,29 @@ export default function Home() {
       .then(r => r.json())
       .then(d => { setNews(Array.isArray(d) ? d : []); setLoading(false); })
       .catch(() => setLoading(false));
+
+    // Listen for global launch status
+    const handleLaunchStatus = (e: any) => {
+      if (e.detail?.status) {
+        const status = e.detail.status;
+        setIsLaunching(status === "Launching" || status === "Loading");
+        setIsRunning(status === "Running");
+      }
+    };
+    window.addEventListener("tauri://launch_status", handleLaunchStatus);
+
+    // Check initial state
+    if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
+      import("@tauri-apps/api/core").then(({ invoke }) => {
+        invoke("is_game_running").then((running: unknown) => {
+          const isRunning = running as boolean;
+          setIsRunning(isRunning);
+          setIsLaunching(false);
+        }).catch(() => {});
+      });
+    }
+
+    return () => window.removeEventListener("tauri://launch_status", handleLaunchStatus);
   }, []);
 
   const handleLaunch = async () => {
@@ -43,7 +67,6 @@ export default function Home() {
       setError("No instances found. Create one in Instances first.");
       return;
     }
-    setLaunching(true);
     setError(null);
     try {
       const ramStr = localStorage.getItem('allocated_ram') || '4';
@@ -52,8 +75,10 @@ export default function Home() {
     } catch (e: any) {
       setError(String(e));
     }
-    setLaunching(false);
   };
+
+  const isLaunchingState = isLaunching;
+  const isRunningState = isRunning;
 
   const [selectedNews, setSelectedNews] = useState<NewsItem | null>(null);
 
@@ -100,19 +125,27 @@ export default function Home() {
         </motion.div>
 
         <motion.button initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
-          onClick={handleLaunch} disabled={launching}
-          whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-          className="btn-accent group relative flex items-center gap-4 px-14 py-4 overflow-hidden rounded-sm"
-          style={{ boxShadow: "0 4px 30px var(--accent-glow)" }}>
-          <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-700"
-            style={{ background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent)" }} />
-          {launching ? (
+          onClick={handleLaunch} disabled={isLaunchingState || isRunningState}
+          whileHover={!(isLaunchingState || isRunningState) ? { scale: 1.03 } : undefined} whileTap={!(isLaunchingState || isRunningState) ? { scale: 0.97 } : undefined}
+          className={`group relative flex items-center gap-4 px-14 py-4 overflow-hidden rounded-sm transition-all ${
+            isLaunchingState || isRunningState
+              ? "bg-gray-600 cursor-not-allowed text-white/60"
+              : "btn-accent"
+          }`}
+          style={!(isLaunchingState || isRunningState) ? { boxShadow: "0 4px 30px var(--accent-glow)" } : undefined}>
+          {!(isLaunchingState || isRunningState) && (
+            <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-700"
+              style={{ background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent)" }} />
+          )}
+          {isLaunchingState ? (
             <div className="w-5 h-5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+          ) : isRunningState ? (
+            <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
           ) : (
             <Play size={20} className="text-white" fill="white" />
           )}
-          <span className="text-white font-bold text-xl tracking-[0.25em] uppercase">
-            {launching ? "Starting" : "Launch"}
+          <span className="font-bold text-xl tracking-[0.25em] uppercase">
+            {isLaunchingState ? "Starting" : isRunningState ? "Running" : "Launch"}
           </span>
         </motion.button>
       </div>

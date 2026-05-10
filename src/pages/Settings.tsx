@@ -46,6 +46,7 @@ export default function Settings() {
   const [preLaunch, setPreLaunch] = useState("");
   const [wrapper, setWrapper] = useState("");
   const [postExit, setPostExit] = useState("");
+  const [developerMode, setDeveloperMode] = useState(false);
 
   // Resource settings
   const [maxDownloads, setMaxDownloads] = useState(5);
@@ -80,6 +81,7 @@ export default function Settings() {
     setPreLaunch(localStorage.getItem('pre_launch') || "");
     setWrapper(localStorage.getItem('wrapper') || "");
     setPostExit(localStorage.getItem('post_exit') || "");
+    setDeveloperMode(localStorage.getItem('developer_mode') === 'true');
 
     // Resources
     setMaxDownloads(Number(localStorage.getItem('max_downloads')) || 5);
@@ -351,6 +353,24 @@ export default function Settings() {
                       <input type="text" value={envVars} onChange={e => { setEnvVars(e.target.value); localStorage.setItem('env_vars', e.target.value); }}
                         className="field w-full p-3 text-xs font-mono rounded-sm" />
                     </div>
+                  </div>
+                </Section>
+
+
+                <Section label="Developer Mode">
+                  <div className="flex items-center justify-between p-2">
+                    <div>
+                      <p className="text-sm font-bold text-white">Enable Developer Mode</p>
+                      <p className="text-xs text-muted mt-0.5">Allow launching instances without authentication for testing</p>
+                    </div>
+                    <button onClick={() => {
+                      const next = !developerMode;
+                      setDeveloperMode(next);
+                      localStorage.setItem('developer_mode', String(next));
+                    }}
+                      className={`w-10 h-5 rounded-full relative transition-colors ${developerMode ? "bg-accent" : "bg-white/10"}`}>
+                       <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${developerMode ? "left-6" : "left-1"}`} />
+                     </button>
                   </div>
                 </Section>
 

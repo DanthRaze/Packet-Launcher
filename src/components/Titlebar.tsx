@@ -1,8 +1,17 @@
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { Minus, Square, X } from 'lucide-react';
+import { Minus, Square, X, Square as StopIcon } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
 
-export default function Titlebar() {
+export default function Titlebar({ isGameRunning }: { isGameRunning: boolean }) {
   const appWindow = getCurrentWindow();
+
+  const handleStop = async () => {
+    try {
+      await invoke("stop_game");
+    } catch (e) {
+      console.error("Failed to stop game:", e);
+    }
+  };
 
   return (
     <div 
@@ -14,6 +23,15 @@ export default function Titlebar() {
       </div>
       
       <div className="flex h-full">
+        {isGameRunning && (
+          <button
+            onClick={handleStop}
+            className="h-full px-3 flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold tracking-wider uppercase transition-colors"
+            title="Stop Game"
+          >
+            <StopIcon size={10} fill="white" /> Stop
+          </button>
+        )}
         <div 
           className="w-12 h-full flex justify-center items-center hover:bg-white/10 transition-colors cursor-pointer text-gray-400 hover:text-white"
           onClick={() => appWindow.minimize()}

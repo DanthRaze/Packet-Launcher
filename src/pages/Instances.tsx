@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { invoke } from "@tauri-apps/api/core";
 import { Star, Play, X, Plus, Package, Folder, Trash2, Pin, Cpu, Settings } from "lucide-react";
 
-const BACKEND_URL = "https://script.google.com/macros/s/AKfycby6VK3P4suZuA58VJA4QfuUBYtBLBxp7QaPREDNuYkuehFdZCVPai9N_MOeq3NdSUsq/exec";
 
 interface InstanceMeta { name: string; instance_type: string; version: string; last_played: string; favourite: boolean; pinned?: boolean; }
 interface MCVersion { id: string; type: string; }
@@ -21,7 +20,10 @@ export default function Instances() {
   const [versionsLoading, setVersionsLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createProgress, setCreateProgress] = useState<string | null>(null);
-  const [launching, setLaunching] = useState<string | null>(null);
+  const [isGameRunning, setIsGameRunning] = useState(false);
+  const [isLaunching, setIsLaunching] = useState(false);
+  const [launchingInstance, setLaunchingInstance] = useState<string | null>(null);
+  const [runningInstance, setRunningInstance] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, name: string } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -35,7 +37,37 @@ export default function Instances() {
   useEffect(() => { 
     load();
     window.addEventListener("instances-updated", load);
-    return () => window.removeEventListener("instances-updated", load);
+    
+    // Listen for launch status updates
+    const handleLaunchStatus = (e: any) => {
+      console.log("Instances page received launch_status:", e.detail);
+      if (e.detail && e.detail.status) {
+        const status = e.detail.status;
+        const isRunning = status === "Running";
+        setIsGameRunning(isRunning);
+        setIsLaunching(status === "Launching" || status === "Loading" ? true : false);
+        setLaunchingInstance(status === "Launching" || status === "Loading" ? e.detail.instance_name : null);
+        setRunningInstance(isRunning ? e.detail.instance_name : null);
+      }
+    };
+    window.addEventListener("tauri://launch_status", handleLaunchStatus);
+    
+    // Check if game is already running - delayed to ensure Tauri is ready
+    const checkInitial = async () => {
+      try {
+        const running = await invoke("is_game_running");
+        setIsGameRunning(running as boolean);
+      } catch (e) {
+        console.log("is_game_running not available yet");
+      }
+    };
+    const timer = setTimeout(checkInitial, 500);
+    
+    return () => {
+      window.removeEventListener("instances-updated", load);
+      window.removeEventListener("tauri://launch_status", handleLaunchStatus);
+      clearTimeout(timer);
+    };
   }, []);
 
   useEffect(() => {
@@ -119,33 +151,37 @@ export default function Instances() {
   };
 
   const handleLaunch = async (name: string) => {
-    setLaunching(name);
+    if (isGameRunning) {
+      // Stop the game instead of launching
+      await handleStop();
+      return;
+    }
+    
     setError(null);
     try {
       const ramStr = localStorage.getItem('allocated_ram') || '4';
       const ram = parseInt(ramStr, 10) || 4;
-      
-      // Update status to backend
-      const savedUser = localStorage.getItem("packet_user");
-      if (savedUser) {
-        const user = JSON.parse(savedUser);
-        fetch(`${BACKEND_URL}?action=updateStatus&username=${user.Username}&status=Online&activity=Playing%20Minecraft&details=${encodeURIComponent(name)}`).catch(() => {});
-        
-        // Update Discord RPC
-        if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
-          invoke("update_discord_rpc", { state: "Playing Minecraft", details: name }).catch(() => {});
-        }
-      }
+      const developerMode = localStorage.getItem('developer_mode') === 'true';
 
       if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
-        await invoke("launch_instance", { instanceName: name, allocatedRamGb: ram });
+        await invoke("launch_instance", { instanceName: name, allocatedRamGb: ram, developerMode });
       } else {
         setError("Launch requires the desktop app (npm run tauri dev)");
       }
     } catch (e: any) {
       setError(String(e));
     }
-    setLaunching(null);
+    // Don't clear launching here - the event listener will update it when status changes
+  };
+
+  const handleStop = async () => {
+    try {
+      if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
+        await invoke("stop_game");
+      }
+    } catch (e: any) {
+      setError(String(e));
+    }
   };
 
   const handleOpenFolder = async (name: string, e?: React.MouseEvent) => {
@@ -244,10 +280,16 @@ export default function Instances() {
                     <Cpu size={11} />
                     <span className="text-[10px] font-medium uppercase tracking-wider">{inst.last_played}</span>
                   </div>
-                  <button onClick={e => { e.stopPropagation(); handleLaunch(inst.name); }} disabled={launching === inst.name}
-                    className="btn-accent flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-[10px]">
-                    <Play size={10} fill="white" />
-                    {launching === inst.name ? "Starting..." : "Play"}
+                  <button onClick={e => { e.stopPropagation(); handleLaunch(inst.name); }} disabled={runningInstance === inst.name || isLaunching}
+                    className={`${runningInstance === inst.name || isLaunching ? "bg-gray-600 cursor-not-allowed text-white/60" : "btn-accent text-white"} flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-[10px] transition-colors`}>
+                    {isLaunching && launchingInstance === inst.name ? (
+                      <div className="w-3 h-3 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                    ) : runningInstance === inst.name ? (
+                      <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    ) : (
+                      <Play size={10} fill="white" />
+                    )}
+                    {isLaunching && launchingInstance === inst.name ? "Starting" : runningInstance === inst.name ? "Running" : "Play"}
                   </button>
                 </div>
               </motion.div>
@@ -278,6 +320,12 @@ export default function Instances() {
               <Folder size={14} className="text-muted" /> Open Folder
             </button>
             <div className="h-[1px] bg-white/5 my-1" />
+            {runningInstance === contextMenu.name && (
+              <button onClick={() => { handleStop(); setContextMenu(null); }}
+                className="w-full px-4 py-2 text-left text-xs font-semibold hover:bg-red-500/10 flex items-center gap-3 transition-colors text-red-400">
+                <X size={14} /> Stop Game
+              </button>
+            )}
             <button onClick={() => { setConfirmDelete(contextMenu.name); setContextMenu(null); }}
               className="w-full px-4 py-2 text-left text-xs font-semibold hover:bg-red-500/10 flex items-center gap-3 transition-colors text-red-400">
               <Trash2 size={14} /> Delete Instance

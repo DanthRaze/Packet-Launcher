@@ -204,7 +204,29 @@ function Sidebar() {
   );
 }
 
-function StatusBadge() {
+function StatusBadge({ isGameRunning, isLaunching, onStopGame }: { isGameRunning: boolean; isLaunching: boolean; onStopGame: () => void }) {
+  // Only show badge when launching or running
+  if (!isLaunching && !isGameRunning) {
+    return (
+      <div className="absolute bottom-6 right-6 z-40 flex items-center gap-2">
+        {/* Download pill (only shown when minimised) */}
+        <div id="download-anchor" />
+      </div>
+    );
+  }
+
+  const getStatusText = () => {
+    if (isLaunching) return "Starting";
+    if (isGameRunning) return "Running";
+    return "";
+  };
+
+  const getStatusColor = () => {
+    if (isLaunching) return "bg-yellow-500";
+    if (isGameRunning) return "bg-emerald-500";
+    return "bg-gray-500";
+  };
+
   return (
     <div className="absolute bottom-6 right-6 z-40 flex items-center gap-2">
       {/* Download pill (only shown when minimised) */}
@@ -212,11 +234,20 @@ function StatusBadge() {
       <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-full"
         style={{ background: "var(--bg-card)", border: "1px solid var(--border-medium)", boxShadow: "0 4px 20px rgba(0,0,0,0.4)" }}>
         <span className="relative flex h-2 w-2">
-          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+          <span className={`relative inline-flex rounded-full h-2 w-2 ${getStatusColor()} ${isLaunching ? "animate-pulse" : ""}`} />
         </span>
         <span className="text-[11px] font-semibold tracking-widest uppercase" style={{ color: "var(--text-secondary)" }}>
-          System Ready
+          {getStatusText()}
         </span>
+        {isGameRunning && (
+          <button 
+            onClick={onStopGame}
+            className="ml-2 p-1 rounded-full bg-red-500/20 hover:bg-red-500/30 text-red-400 transition-colors"
+            title="Stop Game"
+          >
+            <X size={12} />
+          </button>
+        )}
       </div>
     </div>
   );
@@ -243,6 +274,8 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [showUpdateWelcome, setShowUpdateWelcome] = useState(false);
   const [currentVersion, setCurrentVersion] = useState("");
+  const [isGameRunning, setIsGameRunning] = useState(false);
+  const [isLaunching, setIsLaunching] = useState(false);
 
   useEffect(() => {
     // Initial splash screen timer
@@ -252,8 +285,33 @@ function App() {
       if (e.detail && e.detail.name) setDetailsInstance(e.detail.name);
     };
     window.addEventListener("open-instance-details" as any, handleOpenDetails);
+
+    // Listen for launch status updates
+    const handleLaunchStatus = (e: any) => {
+      console.log("Received launch_status event:", e.detail);
+      if (e.detail && e.detail.status) {
+        console.log("Updating status to:", e.detail.status);
+        const status = e.detail.status;
+        setIsGameRunning(status === "Running");
+        setIsLaunching(status === "Launching" || status === "Loading");
+      }
+    };
+    window.addEventListener("tauri://launch_status", handleLaunchStatus);
+
+    // Check if game is already running on app start
+    if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
+      import("@tauri-apps/api/core").then(({ invoke }) => {
+        invoke("is_game_running").then((running: unknown) => {
+          const isRunning = running as boolean;
+          setIsGameRunning(isRunning);
+          setIsLaunching(false);
+        }).catch(() => {});
+      });
+    }
+
     return () => {
       window.removeEventListener("open-instance-details" as any, handleOpenDetails);
+      window.removeEventListener("tauri://launch_status", handleLaunchStatus);
       clearTimeout(timer);
     };
   }, []);
@@ -332,11 +390,20 @@ function App() {
 
         {/* Subtle grid overlay */}
         <div className="grid-bg" />
-        <Titlebar />
+        <Titlebar isGameRunning={isGameRunning} />
         <div className="flex flex-1 overflow-hidden relative z-10">
           <Sidebar />
           <div className="flex-1 relative overflow-hidden" style={{ background: "transparent" }}>
-            <StatusBadge />
+            <StatusBadge isGameRunning={isGameRunning} isLaunching={isLaunching} onStopGame={async () => {
+              if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
+                try {
+                  const { invoke } = await import("@tauri-apps/api/core");
+                  await invoke("stop_game");
+                } catch (e) {
+                  console.error("Failed to stop game:", e);
+                }
+              }
+            }} />
             <DownloadManager />
             <AnimatedRoutes />
 

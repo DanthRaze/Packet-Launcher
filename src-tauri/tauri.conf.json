@@ -16,7 +16,12 @@
         "title": "Packet Launcher",
         "decorations": false,
         "width": 800,
-        "height": 600
+        "height": 600,
+        "minWidth": 800,
+        "minHeight": 600,
+        "resizable": true,
+        "center": true,
+        "fullscreen": false
       }
     ],
     "security": {
@@ -41,6 +46,9 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "category": "Game",
+    "shortDescription": "Minecraft Launcher",
+    "longDescription": "A modern Minecraft launcher with mod support and social features"
   }
 }

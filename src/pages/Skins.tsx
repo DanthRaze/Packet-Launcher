@@ -12,6 +12,7 @@ export default function Skins() {
   const [status, setStatus] = useState<{ type: "success" | "error" | "loading", msg: string } | null>(null);
   const [skinData, setSkinData] = useState<Uint8Array | null>(null);
   const [username, setUsername] = useState("");
+  const [customSkinUrl, setCustomSkinUrl] = useState("");
 
   useEffect(() => {
     invoke<any>("get_saved_profile").then(p => {
@@ -20,14 +21,19 @@ export default function Skins() {
   }, []);
 
   const handleFileSelection = async (path: string) => {
+    console.log("Handling file selection for path:", path);
     try {
       const data = await readFile(path);
+      console.log("File read successfully, data length:", data.length);
       setSkinData(data);
       // Create a preview URL
       const blob = new Blob([data], { type: "image/png" });
-      setSkinUrl(URL.createObjectURL(blob));
+      const url = URL.createObjectURL(blob);
+      setSkinUrl(url);
+      console.log("Skin file loaded successfully");
       setStatus(null);
     } catch (e) {
+      console.error("Failed to read skin file:", e);
       setStatus({ type: "error", msg: "Failed to read skin file." });
     }
   };
@@ -44,18 +50,44 @@ export default function Skins() {
 
   const fetchByUsername = async () => {
     if (!username.trim()) return;
+    console.log("Fetching skin for username:", username.trim());
     setStatus({ type: "loading", msg: "Fetching skin..." });
     const url = `https://mineskin.eu/skin/${username.trim()}`;
     try {
+      console.log("Fetching from URL:", url);
       const res = await fetch(url);
+      console.log("Response status:", res.status);
       if (!res.ok) throw new Error("User not found");
       const blob = await res.blob();
       const arrayBuffer = await blob.arrayBuffer();
       setSkinData(new Uint8Array(arrayBuffer));
       setSkinUrl(url + "?t=" + Date.now());
       setStatus({ type: "success", msg: `Skin for ${username} loaded!` });
+      console.log("Skin loaded successfully for:", username);
     } catch (e) {
+      console.error("Failed to fetch skin:", e);
       setStatus({ type: "error", msg: "Could not find skin for that username." });
+    }
+  };
+
+  const fetchByUrl = async () => {
+    if (!customSkinUrl.trim()) return;
+    console.log("Fetching skin from URL:", customSkinUrl.trim());
+    setStatus({ type: "loading", msg: "Loading skin from URL..." });
+    try {
+      const res = await fetch(customSkinUrl.trim());
+      console.log("URL fetch response status:", res.status);
+      if (!res.ok) throw new Error("Failed to fetch skin from URL");
+      const blob = await res.blob();
+      const arrayBuffer = await blob.arrayBuffer();
+      setSkinData(new Uint8Array(arrayBuffer));
+      setSkinUrl(customSkinUrl.trim() + "?t=" + Date.now());
+      setStatus({ type: "success", msg: "Skin loaded from URL!" });
+      setCustomSkinUrl("");
+      console.log("Skin loaded successfully from URL");
+    } catch (e) {
+      console.error("Failed to fetch skin from URL:", e);
+      setStatus({ type: "error", msg: "Could not load skin from that URL." });
     }
   };
 
@@ -74,6 +106,7 @@ export default function Skins() {
     }
   };
 
+  
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-10 h-full flex flex-col max-w-6xl mx-auto overflow-y-auto custom-scrollbar">
       <div className="mb-8">
@@ -112,6 +145,26 @@ export default function Skins() {
 
         {/* Controls Area */}
         <div className="flex flex-col gap-6">
+          {/* URL Skin Import */}
+          <div className="p-6 rounded-sm bg-white/[0.02] border divider">
+            <label className="block text-[10px] font-bold text-muted uppercase tracking-widest mb-3">Import by URL</label>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <input 
+                  type="text" 
+                  value={customSkinUrl}
+                  onChange={e => setCustomSkinUrl(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && fetchByUrl()}
+                  placeholder="Enter skin URL (e.g., https://example.com/skin.png)" 
+                  className="field w-full px-4 py-2.5 text-sm rounded-sm" 
+                />
+              </div>
+              <button onClick={fetchByUrl} className="btn-ghost px-4 rounded-sm flex items-center gap-2 text-xs font-bold uppercase">
+                <Search size={14} /> Import
+              </button>
+            </div>
+          </div>
+
           {/* Username Fetch */}
           <div className="p-6 rounded-sm bg-white/[0.02] border divider">
             <label className="block text-[10px] font-bold text-muted uppercase tracking-widest mb-3">Fetch by Username</label>
@@ -133,6 +186,7 @@ export default function Skins() {
             </div>
           </div>
 
+          
           {/* Upload Area */}
           <div 
             onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
