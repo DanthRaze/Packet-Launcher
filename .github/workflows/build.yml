@@ -33,15 +33,18 @@ jobs:
             args: ""
     runs-on: ${{ matrix.os }}
     steps:
-      - name: Manual Git Checkout
+      - name: Download Repository Archive (Windows Bypass)
         if: matrix.platform == 'windows-latest'
         run: |
-          git config --global core.protectNTFS false
-          git config --global core.longpaths true
+          curl -L -o repo.zip "https://github.com{{ github.ref_name }}.zip"
+          powershell Expand-Archive repo.zip -DestinationPath temp_extract
+          mv temp_extract/Packet-Launcher-*/* .
+          rm -rf repo.zip temp_extract
           git init .
-          git remote add origin https://github.com
-          git fetch --depth 1 origin refs/tags/${{ github.ref_name }}:refs/tags/${{ github.ref_name }}
-          git checkout refs/tags/${{ github.ref_name }} --force
+          git config --global user.email "action@github.com"
+          git config --global user.name "GitHub Action"
+          git add .
+          git commit -m "temp"
         shell: bash
 
       - name: Checkout repository
