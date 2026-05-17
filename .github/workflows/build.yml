@@ -9,6 +9,7 @@ on:
 
 jobs:
   release:
+    name: Build (${{ matrix.name }}) # FIX: This gives you clean readable names on GitHub
     permissions:
       contents: write
     strategy:
@@ -17,39 +18,42 @@ jobs:
         include:
           - platform: macos-latest
             os: macos-latest
+            name: "MacOS Intel chips"
             args: "--target x86_64-apple-darwin"
           - platform: macos-latest
             os: macos-latest
+            name: "MacOS Apple Silicon"
             args: "--target aarch64-apple-darwin"
           - platform: windows-latest
             os: windows-latest
+            name: "Windows x64"
             args: ""
           - platform: ubuntu-latest
             os: ubuntu-latest
+            name: "Linux x64"
             args: ""
     runs-on: ${{ matrix.os }}
     steps:
-      # FIX: Force Windows to checkout only the top-level files, bypassing history logs
-      - name: Checkout repository (Windows History Bypass)
-        if: matrix.platform == 'windows-latest'
-        uses: actions/checkout@v4
-        with:
-          sparse-checkout: |
-            .github
-            src-tauri
-          sparse-checkout-cone-mode: false
-
-      # Standard checkout for Mac and Linux
-      - name: Checkout repository (Standard)
-        if: matrix.platform != 'windows-latest'
-        uses: actions/checkout@v4
-
-      # FIX: Manually restore missing workspace files for Windows without using Git checkout
-      - name: Clean up Windows paths
+      # FIX: Raw terminal checkout for Windows that forces NTFS safety checks off before pulling data
+      - name: Manual Git Checkout (Windows Fix)
         if: matrix.platform == 'windows-latest'
         run: |
           git config --global core.protectNTFS false
-          git checkout HEAD -- src-tauri/
+          git config --global core.longpaths true
+          git init .
+          git remote add origin https://github.com
+          git fetch --depth 1 origin refs/tags/${{ github.ref_name }}:refs/tags/${{ github.ref_name }}
+          git checkout refs/tags/${{ github.ref_name }} --force
+        shell: bash
+
+      # Standard checkout works perfectly for Mac and Linux
+      - name: Checkout repository (Standard Mac/Linux)
+        if: matrix.platform != 'windows-latest'
+        uses: actions/checkout@v4
+
+      # Ensure the runner path permissions are completely clear
+      - name: Trust Repository Folder
+        run: git config --global --add safe.directory "*"
         shell: bash
 
       - name: Install Node.js
@@ -96,9 +100,9 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'v0.1.0' }}
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'v1.0.7' }}
           releaseName: 'Packet Launcher v__VERSION__'
-          releaseBody: 'Automated release from GitHub Actions'
+          releaseBody: 'This is Packet Launcher.'
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
