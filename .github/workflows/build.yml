@@ -25,23 +25,25 @@ jobs:
             os: windows-latest
             args: ""
           - platform: ubuntu-latest
-            os: ubuntu-22.04
+            os: ubuntu-latest # Restores Ubuntu 24.04 for Tauri v2 / 4.1 support
             args: ""
     runs-on: ${{ matrix.os }}
     steps:
-      # FIX: Injects git config globally before checkout actions touch anything
-      - name: Pre-configure Git for Windows
-        if: matrix.platform == 'windows-latest'
-        run: |
-          git config --global core.protectNTFS false
-          git config --global core.longpaths true
-        shell: bash
-
+      # FIX: Injects NTFS bypass flags dynamically into the checkout environment variables 
       - name: Checkout repository
         uses: actions/checkout@v4
+        env:
+          GIT_CONFIG_GLOBAL: 'core.protectNTFS=false'
+          GIT_CONFIG_PARAMETERS: "'core.protectNTFS=false' 'core.longpaths=true'"
         with:
-          # FIX: Force the checkout module to respect the global environment variables we just injected
-          set-safe-directory: true 
+          set-safe-directory: true
+
+      # FIX: Wipe the physical bad file out on the Windows runner if it leaks past checkout
+      - name: Clean Invalid Ghost Files (Windows)
+        if: matrix.platform == 'windows-latest'
+        run: |
+          git rm --cached -r "src/lib.rs:939:3" --ignore-unmatch || true
+        shell: bash
 
       - name: Install Node.js
         uses: actions/setup-node@v4
@@ -78,8 +80,8 @@ jobs:
         if: matrix.platform == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          # FIX: Added libsoup-3.0-dev to clear the soup3-sys compilation failure
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev
+          # FIX: Installed modern webkit2gtk 4.1 and javascriptcoregtk 4.1 packages
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev
 
       - name: Build the app
         uses: tauri-apps/tauri-action@v0
