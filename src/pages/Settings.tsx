@@ -97,6 +97,7 @@ export default function Settings() {
   const [isChecking, setIsChecking] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
+  const [hasChecked, setHasChecked] = useState(false);
 
   useEffect(() => {
     // Load existing settings
@@ -106,7 +107,7 @@ export default function Settings() {
     if (g) setActiveGradient(g);
     const r = localStorage.getItem('allocated_ram');
     if (r) setRam(parseInt(r));
-    
+
     // Advanced
     setJavaArgs(localStorage.getItem('java_args') || "-XX:+UseG1GC -XX:+UnlockExperimentalVMOptions");
     setEnvVars(localStorage.getItem('env_vars') || "");
@@ -119,7 +120,7 @@ export default function Settings() {
     // Resources
     setMaxDownloads(Number(localStorage.getItem('max_downloads')) || 5);
     setMaxWrites(Number(localStorage.getItem('max_writes')) || 25);
-    
+
     // Discord
     const drpc = localStorage.getItem('discord_rpc') !== 'false';
     setDiscordRpc(drpc);
@@ -128,12 +129,12 @@ export default function Settings() {
     setSocialIntro(localStorage.getItem('social_intro_enabled') !== 'false');
 
     if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
-      invoke<number>("get_system_memory").then(m => setSystemRam(m > 0 ? m : 8)).catch(() => {});
+      invoke<number>("get_system_memory").then(m => setSystemRam(m > 0 ? m : 8)).catch(() => { });
       invoke<{ username: string; skin_url: string; uuid: string; access_token: string } | null>("get_saved_profile")
         .then(p => { if (p) { setProfile(p); setAuthStatus("in"); } })
-        .catch(() => {});
+        .catch(() => { });
       if (drpc) invoke("set_discord_rpc", { enabled: true }).catch(console.error);
-      getVersion().then(setCurrentVersion).catch(() => {});
+      getVersion().then(setCurrentVersion).catch(() => { });
     }
 
     const handleProfileUpdate = (e: any) => {
@@ -149,12 +150,19 @@ export default function Settings() {
 
   const handleCheckUpdates = async () => {
     setIsChecking(true);
+    setHasChecked(true);
     setUpdateError(null);
     setUpdateInfo(null);
+
     try {
       if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
         const update = await check();
-        setUpdateInfo(update);
+
+        if (update) {
+          setUpdateInfo(update);
+        } else {
+          setUpdateInfo(null);
+        }
       } else {
         setUpdateError("Updates only available in the desktop app");
       }
@@ -213,7 +221,7 @@ export default function Settings() {
 
   const handleLogout = async () => {
     if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
-      await invoke("delete_saved_profile").catch(() => {});
+      await invoke("delete_saved_profile").catch(() => { });
     }
     setProfile(null);
     setAuthStatus("out");
@@ -287,9 +295,9 @@ export default function Settings() {
                 </Section>
 
                 <Section label="Account">
-                   <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-4">
                     <div className="w-12 h-12 rounded-sm bg-primary/20 border divider flex items-center justify-center overflow-hidden">
-                        <img src={profile ? `https://mineskin.eu/armor/body/${profile.username}` : "https://mineskin.eu/armor/body/steve"} className="w-full h-full object-cover" />
+                      <img src={profile ? `https://mineskin.eu/armor/body/${profile.username}` : "https://mineskin.eu/armor/body/steve"} className="w-full h-full object-cover" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-white truncate">{profile?.username || "Guest"}</p>
@@ -297,7 +305,7 @@ export default function Settings() {
                         {profile ? "Sign Out" : "Sign In with MS"}
                       </button>
                     </div>
-                   </div>
+                  </div>
                 </Section>
 
                 <Section label="Global RAM">
@@ -330,7 +338,7 @@ export default function Settings() {
                           <p className="text-[10px] font-bold text-muted uppercase tracking-[0.2em] mb-1">Current Version</p>
                           <p className="text-sm font-bold text-white">v{currentVersion}</p>
                         </div>
-                        <button 
+                        <button
                           onClick={handleCheckUpdates}
                           disabled={isChecking || isUpdating}
                           className="flex items-center gap-2 px-4 py-2 rounded-sm bg-accent/10 hover:bg-accent/20 text-accent text-[10px] font-bold uppercase tracking-widest transition-all disabled:opacity-50"
@@ -354,7 +362,7 @@ export default function Settings() {
                               <p className="text-[10px] font-bold text-accent uppercase tracking-widest mb-1">Update Available</p>
                               <p className="text-lg font-bold text-white">v{updateInfo.version}</p>
                             </div>
-                            <button 
+                            <button
                               onClick={handleInstallUpdate}
                               disabled={isUpdating}
                               className="flex items-center gap-2 px-6 py-2.5 rounded-sm bg-accent text-white text-[10px] font-bold uppercase tracking-widest hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
@@ -370,11 +378,11 @@ export default function Settings() {
                             </div>
                           )}
                         </motion.div>
-                      ) : !isChecking && !updateError && (
-                         <div className="flex items-center gap-2 text-[10px] text-emerald-400 font-bold uppercase tracking-widest pt-2">
-                           <CheckCircle2 size={14} />
-                           You are on the latest version
-                         </div>
+                      ) : hasChecked && !isChecking && !updateError && (
+                        <div className="flex items-center gap-2 text-[10px] text-emerald-400 font-bold uppercase tracking-widest pt-2">
+                          <CheckCircle2 size={14} />
+                          You are on the latest version
+                        </div>
                       )}
                     </div>
                   </div>
@@ -413,16 +421,16 @@ export default function Settings() {
                         localStorage.setItem('developer_mode', String(next));
                       }}
                         className={`w-10 h-5 rounded-full relative transition-colors ${developerMode ? "bg-accent" : "bg-white/10"}`}>
-                         <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${developerMode ? "left-6" : "left-1"}`} />
-                       </button>
+                        <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${developerMode ? "left-6" : "left-1"}`} />
+                      </button>
                     </div>
                     <div>
                       <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1">Developer Username</label>
-                      <input 
-                        type="text" 
-                        value={developerUsername} 
-                        onChange={async (e) => { 
-                          setDeveloperUsername(e.target.value); 
+                      <input
+                        type="text"
+                        value={developerUsername}
+                        onChange={async (e) => {
+                          setDeveloperUsername(e.target.value);
                           debouncedSaveDevUsername(e.target.value);
                           // Also save to backend for game to use
                           if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
@@ -434,8 +442,8 @@ export default function Settings() {
                           }
                         }}
                         disabled={!developerMode}
-                        placeholder="Developer" 
-                        className="field w-full p-3 text-[10px] rounded-sm focus:outline-none focus:ring-2 focus:ring-accent/50" 
+                        placeholder="Developer"
+                        className="field w-full p-3 text-[10px] rounded-sm focus:outline-none focus:ring-2 focus:ring-accent/50"
                       />
                       <p className="text-xs text-muted mt-1">Custom username when Developer Mode is enabled</p>
                     </div>
@@ -443,20 +451,20 @@ export default function Settings() {
                 </Section>
 
                 <Section label="Instance Hooks">
-                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <label className="text-[9px] font-bold text-muted uppercase block mb-1.5">Pre-Launch</label>
-                        <input type="text" value={preLaunch} onChange={e => { setPreLaunch(e.target.value); debouncedSavePreLaunch(e.target.value); }} className="field w-full p-3 text-[10px] rounded-sm" placeholder="path/to/script" />
-                      </div>
-                      <div>
-                        <label className="text-[9px] font-bold text-muted uppercase block mb-1.5">Wrapper</label>
-                        <input type="text" value={wrapper} onChange={e => { setWrapper(e.target.value); debouncedSaveWrapper(e.target.value); }} className="field w-full p-3 text-[10px] rounded-sm" placeholder="e.g. primusrun" />
-                      </div>
-                      <div>
-                        <label className="text-[9px] font-bold text-muted uppercase block mb-1.5">Post-Exit</label>
-                        <input type="text" value={postExit} onChange={e => { setPostExit(e.target.value); debouncedSavePostExit(e.target.value); }} className="field w-full p-3 text-[10px] rounded-sm" placeholder="path/to/script" />
-                      </div>
-                   </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="text-[9px] font-bold text-muted uppercase block mb-1.5">Pre-Launch</label>
+                      <input type="text" value={preLaunch} onChange={e => { setPreLaunch(e.target.value); debouncedSavePreLaunch(e.target.value); }} className="field w-full p-3 text-[10px] rounded-sm" placeholder="path/to/script" />
+                    </div>
+                    <div>
+                      <label className="text-[9px] font-bold text-muted uppercase block mb-1.5">Wrapper</label>
+                      <input type="text" value={wrapper} onChange={e => { setWrapper(e.target.value); debouncedSaveWrapper(e.target.value); }} className="field w-full p-3 text-[10px] rounded-sm" placeholder="e.g. primusrun" />
+                    </div>
+                    <div>
+                      <label className="text-[9px] font-bold text-muted uppercase block mb-1.5">Post-Exit</label>
+                      <input type="text" value={postExit} onChange={e => { setPostExit(e.target.value); debouncedSavePostExit(e.target.value); }} className="field w-full p-3 text-[10px] rounded-sm" placeholder="path/to/script" />
+                    </div>
+                  </div>
                 </Section>
               </motion.div>
             )}
@@ -487,16 +495,16 @@ export default function Settings() {
                 </Section>
 
                 <Section label="Maintenance">
-                   <div className="flex items-center justify-between p-4 rounded-sm bg-red-500/5 border border-red-500/10">
-                     <div>
-                       <p className="text-sm font-bold text-white">Purge System Cache</p>
-                       <p className="text-[10px] text-red-400 mt-0.5">Clears versions, libraries, and temporary files.</p>
-                     </div>
-                     <button onClick={purgeCache} disabled={purging}
+                  <div className="flex items-center justify-between p-4 rounded-sm bg-red-500/5 border border-red-500/10">
+                    <div>
+                      <p className="text-sm font-bold text-white">Purge System Cache</p>
+                      <p className="text-[10px] text-red-400 mt-0.5">Clears versions, libraries, and temporary files.</p>
+                    </div>
+                    <button onClick={purgeCache} disabled={purging}
                       className="px-6 py-2 rounded-sm bg-red-500/10 hover:bg-red-500/20 text-red-500 text-xs font-bold uppercase transition-colors">
-                       {purging ? "Purging..." : "Purge Cache"}
-                     </button>
-                   </div>
+                      {purging ? "Purging..." : "Purge Cache"}
+                    </button>
+                  </div>
                 </Section>
               </motion.div>
             )}
@@ -511,8 +519,8 @@ export default function Settings() {
                     </div>
                     <button onClick={toggleDiscord}
                       className={`w-10 h-5 rounded-full relative transition-colors ${discordRpc ? "bg-accent" : "bg-white/10"}`}>
-                       <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${discordRpc ? "left-6" : "left-1"}`} />
-                     </button>
+                      <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${discordRpc ? "left-6" : "left-1"}`} />
+                    </button>
                   </div>
                 </Section>
               </motion.div>
@@ -532,8 +540,8 @@ export default function Settings() {
                       localStorage.setItem('social_intro_enabled', String(next));
                     }}
                       className={`w-10 h-5 rounded-full relative transition-colors ${socialIntro ? "bg-accent" : "bg-white/10"}`}>
-                       <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${socialIntro ? "left-6" : "left-1"}`} />
-                     </button>
+                      <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${socialIntro ? "left-6" : "left-1"}`} />
+                    </button>
                   </div>
                 </Section>
               </motion.div>
