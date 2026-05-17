@@ -25,24 +25,31 @@ jobs:
             os: windows-latest
             args: ""
           - platform: ubuntu-latest
-            os: ubuntu-latest # Restores Ubuntu 24.04 for Tauri v2 / 4.1 support
+            os: ubuntu-latest
             args: ""
     runs-on: ${{ matrix.os }}
     steps:
-      # FIX: Injects NTFS bypass flags dynamically into the checkout environment variables 
-      - name: Checkout repository
+      # FIX: Force Windows to checkout only the top-level files, bypassing history logs
+      - name: Checkout repository (Windows History Bypass)
+        if: matrix.platform == 'windows-latest'
         uses: actions/checkout@v4
-        env:
-          GIT_CONFIG_GLOBAL: 'core.protectNTFS=false'
-          GIT_CONFIG_PARAMETERS: "'core.protectNTFS=false' 'core.longpaths=true'"
         with:
-          set-safe-directory: true
+          sparse-checkout: |
+            .github
+            src-tauri
+          sparse-checkout-cone-mode: false
 
-      # FIX: Wipe the physical bad file out on the Windows runner if it leaks past checkout
-      - name: Clean Invalid Ghost Files (Windows)
+      # Standard checkout for Mac and Linux
+      - name: Checkout repository (Standard)
+        if: matrix.platform != 'windows-latest'
+        uses: actions/checkout@v4
+
+      # FIX: Manually restore missing workspace files for Windows without using Git checkout
+      - name: Clean up Windows paths
         if: matrix.platform == 'windows-latest'
         run: |
-          git rm --cached -r "src/lib.rs:939:3" --ignore-unmatch || true
+          git config --global core.protectNTFS false
+          git checkout HEAD -- src-tauri/
         shell: bash
 
       - name: Install Node.js
@@ -80,7 +87,6 @@ jobs:
         if: matrix.platform == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          # FIX: Installed modern webkit2gtk 4.1 and javascriptcoregtk 4.1 packages
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev
 
       - name: Build the app
