@@ -16,15 +16,27 @@ jobs:
       matrix:
         include:
           - platform: macos-latest
+            os: macos-latest
             args: "--target x86_64-apple-darwin"
           - platform: macos-latest
+            os: macos-latest
             args: "--target aarch64-apple-darwin"
           - platform: windows-latest
+            os: windows-latest
             args: ""
           - platform: ubuntu-latest
+            os: ubuntu-22.04 # Explicitly forces Ubuntu 22.04 to fix the package missing error
             args: ""
-    runs-on: ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }} # Uses the fixed OS mapping
     steps:
+      # FIX: Injects git configuration to bypass invalid character file checkouts on Windows
+      - name: Configure Git (Windows Path Fix)
+        if: matrix.platform == 'windows-latest'
+        run: |
+          git config --global core.protectNTFS false
+          git config --global core.longpaths true
+        shell: bash
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
