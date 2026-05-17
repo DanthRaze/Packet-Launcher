@@ -492,7 +492,7 @@ fn list_screenshots() -> Result<Vec<ScreenshotInfo>, String> {
 #[command]
 fn stop_game(app: AppHandle) -> Result<(), String> {
     let mut process = RUNNING_PROCESS.lock().unwrap();
-    if let Some(child) = process.take() {
+    if let Some(mut child) = process.take() {
         let pid = child.id();
         
         // On macOS/Unix, child.kill() only sends SIGKILL to the parent.
