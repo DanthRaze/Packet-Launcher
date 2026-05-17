@@ -8,8 +8,6 @@ on:
 
 jobs:
   release:
-    name: Build (${{ matrix.name }})
-
     permissions:
       contents: write
 
@@ -19,17 +17,13 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            name: "MacOS Intel"
-            target: "x86_64-apple-darwin"
-
-          - os: macos-latest
-            name: "MacOS Apple Silicon"
-            target: "aarch64-apple-darwin"
+            name: "MacOS Universal"
 
           - os: windows-latest
             name: "Windows x64"
             target: "x86_64-pc-windows-msvc"
 
+    name: Build (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -57,9 +51,87 @@ jobs:
       - name: Install frontend dependencies
         run: npm install
 
-      - name: Build Tauri Application
-        uses: tauri-apps/tauri-action@v0
+      #
+      # =========================
+      # MACOS UNIVERSAL BUILD
+      # =========================
+      #
 
+      - name: Build macOS Intel
+        if: matrix.os == 'macos-latest'
+        run: |
+          npm run tauri build -- --target x86_64-apple-darwin
+
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      - name: Build macOS Apple Silicon
+        if: matrix.os == 'macos-latest'
+        run: |
+          npm run tauri build -- --target aarch64-apple-darwin
+
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      - name: Create Universal macOS App
+        if: matrix.os == 'macos-latest'
+        run: |
+          APP_NAME="Packet Launcher.app"
+
+          mkdir -p target/universal-macos
+
+          cp -R "target/x86_64-apple-darwin/release/bundle/macos/$APP_NAME" \
+                "target/universal-macos/$APP_NAME"
+
+          lipo -create \
+            "target/x86_64-apple-darwin/release/packet-launcher" \
+            "target/aarch64-apple-darwin/release/packet-launcher" \
+            -output "target/universal-macos/$APP_NAME/Contents/MacOS/packet-launcher"
+
+      - name: Create Universal DMG
+        if: matrix.os == 'macos-latest'
+        run: |
+          npm install -g create-dmg
+
+          mkdir -p target/final
+
+          create-dmg \
+            "target/universal-macos/Packet Launcher.app" \
+            target/final
+
+      - name: Create Universal tar.gz
+        if: matrix.os == 'macos-latest'
+        run: |
+          cd target/universal-macos
+          tar -czf ../final/Packet-Launcher-macos-universal.tar.gz "Packet Launcher.app"
+
+      - name: Sign Universal tar.gz
+        if: matrix.os == 'macos-latest'
+        run: |
+          npx tauri signer sign \
+            --private-key "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" \
+            target/final/Packet-Launcher-macos-universal.tar.gz
+
+      - name: Upload Universal macOS Assets
+        if: matrix.os == 'macos-latest'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            target/final/*.dmg
+            target/final/*.tar.gz
+            target/final/*.sig
+
+      #
+      # =========================
+      # WINDOWS BUILD
+      # =========================
+      #
+
+      - name: Build Windows App
+        if: matrix.os == 'windows-latest'
+        uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -71,4 +143,4 @@ jobs:
           releaseBody: "Automated release from GitHub Actions"
           releaseDraft: false
           prerelease: false
-          args: --target ${{ matrix.target }}
+          args: --target x86_64-pc-windows-msvc
