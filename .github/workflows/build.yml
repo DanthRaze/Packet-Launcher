@@ -9,101 +9,58 @@ on:
 jobs:
   release:
     name: Build (${{ matrix.name }})
+
     permissions:
       contents: write
 
     strategy:
       fail-fast: false
+
       matrix:
         include:
-          - platform: macos-latest
-            os: macos-latest
-            name: "MacOS Intel chips"
+          - os: macos-latest
+            name: "MacOS Intel"
             args: "--target x86_64-apple-darwin"
 
-          - platform: macos-latest
-            os: macos-latest
+          - os: macos-latest
             name: "MacOS Apple Silicon"
             args: "--target aarch64-apple-darwin"
 
-          - platform: windows-latest
-            os: windows-latest
+          - os: windows-latest
             name: "Windows x64"
             args: ""
 
-          - platform: ubuntu-latest
-            os: ubuntu-latest
+          - os: ubuntu-latest
             name: "Linux x64"
             args: ""
 
     runs-on: ${{ matrix.os }}
 
     steps:
-      # Windows workaround
-      - name: Download Repository Archive (Windows Bypass)
-        if: matrix.platform == 'windows-latest'
-        run: |
-          curl -L -o repo.zip "https://github.com/${{ github.repository }}/archive/refs/tags/${{ github.ref_name }}.zip"
-
-          powershell Expand-Archive repo.zip -DestinationPath temp_extract
-
-          mv temp_extract/*/* .
-
-          rm -rf repo.zip temp_extract
-
-          git init .
-
-          git config --global user.email "action@github.com"
-          git config --global user.name "GitHub Action"
-
-          git add .
-          git commit -m "temp"
-        shell: bash
-
-      # Normal checkout for macOS + Linux
       - name: Checkout repository
-        if: matrix.platform != 'windows-latest'
         uses: actions/checkout@v4
 
-      - name: Trust Repository Folder
-        run: git config --global --add safe.directory "*"
-        shell: bash
-
-      - name: Install Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: lts/*
 
-      - name: Install Rust (Windows)
-        if: matrix.platform == 'windows-latest'
+      - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc
-
-      - name: Install Rust (macOS)
-        if: matrix.platform == 'macos-latest'
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-apple-darwin,aarch64-apple-darwin
-
-      - name: Install Rust (Linux)
-        if: matrix.platform == 'ubuntu-latest'
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-unknown-linux-gnu
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: './src-tauri -> target'
+          workspaces: "./src-tauri -> target"
 
       - name: Install frontend dependencies
         run: npm install
 
-      - name: Install system dependencies (Ubuntu)
-        if: matrix.platform == 'ubuntu-latest'
+      - name: Install Ubuntu dependencies
+        if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
+
           sudo apt-get install -y \
             libgtk-3-dev \
             libwebkit2gtk-4.1-dev \
@@ -112,8 +69,9 @@ jobs:
             patchelf \
             libsoup-3.0-dev
 
-      - name: Build the app
+      - name: Build Tauri App
         uses: tauri-apps/tauri-action@v0
+
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
