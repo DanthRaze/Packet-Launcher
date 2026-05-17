@@ -8,22 +8,23 @@ on:
 
 jobs:
   release:
+    name: Build (${{ matrix.name }})
+
     permissions:
       contents: write
 
     strategy:
       fail-fast: false
-
       matrix:
         include:
           - os: macos-latest
             name: "MacOS Universal"
+            target: "universal-apple-darwin"
 
           - os: windows-latest
             name: "Windows x64"
             target: "x86_64-pc-windows-msvc"
 
-    name: Build (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -51,117 +52,16 @@ jobs:
       - name: Install frontend dependencies
         run: npm install
 
-      #
-      # =========================
-      # MACOS UNIVERSAL BUILD
-      # =========================
-      #
-
-      - name: Build macOS Intel
-        if: matrix.os == 'macos-latest'
-        run: |
-          npm run tauri build -- \
-            --target x86_64-apple-darwin \
-            --bundles app,dmg
-
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-
-      - name: Build macOS Apple Silicon
-        if: matrix.os == 'macos-latest'
-        run: |
-          npm run tauri build -- \
-            --target aarch64-apple-darwin \
-            --bundles app,dmg
-
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-
-      - name: Create Universal macOS App
-        if: matrix.os == 'macos-latest'
-        run: |
-          APP_NAME="Packet Launcher.app"
-
-          mkdir -p target/universal-macos
-
-          APP_PATH=$(find target/x86_64-apple-darwin/release/bundle -type d -name "$APP_NAME" | head -n 1)
-
-          echo "Found app at: $APP_PATH"
-
-          if [ -z "$APP_PATH" ]; then
-            echo "ERROR: Could not find built .app bundle"
-            exit 1
-          fi
-
-          cp -R "$APP_PATH" "target/universal-macos/$APP_NAME"
-
-          lipo -create \
-            "target/x86_64-apple-darwin/release/packet-launcher" \
-            "target/aarch64-apple-darwin/release/packet-launcher" \
-            -output "target/universal-macos/$APP_NAME/Contents/MacOS/packet-launcher"
-
-      - name: Create Universal DMG
-        if: matrix.os == 'macos-latest'
-        run: |
-          npm install -g create-dmg
-
-          mkdir -p target/final
-
-          create-dmg \
-            "target/universal-macos/Packet Launcher.app" \
-            target/final
-
-      - name: Rename DMG
-        if: matrix.os == 'macos-latest'
-        run: |
-          DMG_FILE=$(find target/final -name "*.dmg" | head -n 1)
-
-          mv "$DMG_FILE" \
-             "target/final/Packet-Launcher-macos-universal.dmg"
-
-      - name: Create Universal tar.gz
-        if: matrix.os == 'macos-latest'
-        run: |
-          cd target/universal-macos
-          tar -czf ../final/Packet-Launcher-macos-universal.tar.gz "Packet Launcher.app"
-
-      - name: Sign Universal tar.gz
-        if: matrix.os == 'macos-latest'
-        run: |
-          npx tauri signer sign \
-            --private-key "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" \
-            target/final/Packet-Launcher-macos-universal.tar.gz
-
-      - name: Upload Universal macOS Assets
-        if: matrix.os == 'macos-latest'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            target/final/*.dmg
-            target/final/*.tar.gz
-            target/final/*.sig
-
-      #
-      # =========================
-      # WINDOWS BUILD
-      # =========================
-      #
-
-      - name: Build Windows App
-        if: matrix.os == 'windows-latest'
+      - name: Build Tauri Application
         uses: tauri-apps/tauri-action@v0
-
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Packet Launcher v__VERSION__"
           releaseBody: "Automated release from GitHub Actions"
           releaseDraft: false
           prerelease: false
-          args: --target x86_64-pc-windows-msvc
+          args: --target ${{ matrix.target }}
