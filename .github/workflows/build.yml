@@ -60,7 +60,9 @@ jobs:
       - name: Build macOS Intel
         if: matrix.os == 'macos-latest'
         run: |
-          npm run tauri build -- --target x86_64-apple-darwin
+          npm run tauri build -- \
+            --target x86_64-apple-darwin \
+            --bundles app,dmg
 
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -69,7 +71,9 @@ jobs:
       - name: Build macOS Apple Silicon
         if: matrix.os == 'macos-latest'
         run: |
-          npm run tauri build -- --target aarch64-apple-darwin
+          npm run tauri build -- \
+            --target aarch64-apple-darwin \
+            --bundles app,dmg
 
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -82,9 +86,14 @@ jobs:
 
           mkdir -p target/universal-macos
 
-          APP_PATH=$(find target/x86_64-apple-darwin/release/bundle -name "$APP_NAME" | head -n 1)
+          APP_PATH=$(find target/x86_64-apple-darwin/release/bundle -type d -name "$APP_NAME" | head -n 1)
 
           echo "Found app at: $APP_PATH"
+
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: Could not find built .app bundle"
+            exit 1
+          fi
 
           cp -R "$APP_PATH" "target/universal-macos/$APP_NAME"
 
