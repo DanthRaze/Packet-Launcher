@@ -25,12 +25,12 @@ jobs:
             os: windows-latest
             args: ""
           - platform: ubuntu-latest
-            os: ubuntu-22.04 # Explicitly forces Ubuntu 22.04 to fix the package missing error
+            os: ubuntu-22.04
             args: ""
-    runs-on: ${{ matrix.os }} # Uses the fixed OS mapping
+    runs-on: ${{ matrix.os }}
     steps:
-      # FIX: Injects git configuration to bypass invalid character file checkouts on Windows
-      - name: Configure Git (Windows Path Fix)
+      # FIX: Injects git config globally before checkout actions touch anything
+      - name: Pre-configure Git for Windows
         if: matrix.platform == 'windows-latest'
         run: |
           git config --global core.protectNTFS false
@@ -39,6 +39,9 @@ jobs:
 
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # FIX: Force the checkout module to respect the global environment variables we just injected
+          set-safe-directory: true 
 
       - name: Install Node.js
         uses: actions/setup-node@v4
@@ -75,7 +78,8 @@ jobs:
         if: matrix.platform == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev patchelf
+          # FIX: Added libsoup-3.0-dev to clear the soup3-sys compilation failure
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev
 
       - name: Build the app
         uses: tauri-apps/tauri-action@v0
