@@ -1,0 +1,33 @@
+---- Crashed! ----
+Date/Time: 2026/05/16 21:40:51.7093 [+0100]
+Quilt Loader Version: 0.26.0
+
+-- Crash --
+
+java.lang.IllegalArgumentException: Unsupported class file major version 69
+	at org.objectweb.asm.ClassReader.<init>(ClassReader.java:200)
+	at org.objectweb.asm.ClassReader.<init>(ClassReader.java:180)
+	at org.objectweb.asm.ClassReader.<init>(ClassReader.java:166)
+	at org.objectweb.asm.ClassReader.<init>(ClassReader.java:288)
+	at org.quiltmc.loader.impl.entrypoint.GameTransformer.lambda$locateEntrypoints$0(GameTransformer.java:92)
+	at org.quiltmc.loader.impl.entrypoint.GameTransformer$1.getClassSourceReader(GameTransformer.java:108)
+	at org.quiltmc.loader.impl.entrypoint.GameTransformer$1.getClassNode(GameTransformer.java:115)
+	at org.quiltmc.loader.impl.game.minecraft.patch.EntrypointPatch.process(EntrypointPatch.java:90)
+	at org.quiltmc.loader.impl.entrypoint.GameTransformer.locateEntrypoints(GameTransformer.java:138)
+	at org.quiltmc.loader.impl.game.minecraft.MinecraftGameProvider.initialize(MinecraftGameProvider.java:440)
+	at org.quiltmc.loader.impl.launch.knot.Knot.init(Knot.java:143)
+	at org.quiltmc.loader.impl.launch.knot.Knot.launch(Knot.java:78)
+	at org.quiltmc.loader.impl.launch.knot.KnotClient.main(KnotClient.java:28)
+
+
+-- Mods --
+
+| Index | Mod          | ID           | Version | Type      | File Hash (SHA-1) | File(s) |
+|------:|--------------|--------------|---------|-----------|-------------------|---------|
+|       | Quilt Loader | quilt_loader | 0.26.0  | !missing! |                   |         |
+|------:|--------------|--------------|---------|-----------|-------------------|---------|
+Mod Table Version: 2
+Plugin Types: {}
+
+
+---- end of report ----

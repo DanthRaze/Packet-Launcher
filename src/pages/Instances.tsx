@@ -7,7 +7,7 @@ import { Star, Play, X, Plus, Package, Folder, Trash2, Pin, Cpu, Settings } from
 interface InstanceMeta { name: string; instance_type: string; version: string; last_played: string; favourite: boolean; pinned?: boolean; }
 interface MCVersion { id: string; type: string; }
 
-const TYPE_COLORS: Record<string, string> = { Vanilla: "#22c55e", Fabric: "#93c5fd", Forge: "#fb923c", Quilt: "#a78bfa" };
+const TYPE_COLORS: Record<string, string> = { Vanilla: "#22c55e", Fabric: "#93c5fd" };
 
 export default function Instances() {
   const [instances, setInstances] = useState<InstanceMeta[]>([]);
@@ -25,8 +25,9 @@ export default function Instances() {
   const [launchingInstance, setLaunchingInstance] = useState<string | null>(null);
   const [runningInstance, setRunningInstance] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [contextMenu, setContextMenu] = useState<{ x: number, y: number, name: string } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; instance: InstanceMeta | null } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [showLaunchPopup, setShowLaunchPopup] = useState(false);
 
   const load = async () => {
     if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
@@ -48,6 +49,13 @@ export default function Instances() {
         setIsLaunching(status === "Launching" || status === "Loading" ? true : false);
         setLaunchingInstance(status === "Launching" || status === "Loading" ? e.detail.instance_name : null);
         setRunningInstance(isRunning ? e.detail.instance_name : null);
+        // Handle Stopped status to reset states
+        if (status === "Stopped") {
+          setIsGameRunning(false);
+          setIsLaunching(false);
+          setLaunchingInstance(null);
+          setRunningInstance(null);
+        }
       }
     };
     window.addEventListener("tauri://launch_status", handleLaunchStatus);
@@ -151,11 +159,21 @@ export default function Instances() {
   };
 
   const handleLaunch = async (name: string) => {
-    if (isGameRunning) {
-      // Stop the game instead of launching
+    // If this specific instance is running, stop it
+    if (runningInstance === name) {
       await handleStop();
       return;
     }
+    
+    // Prevent launching if ANY game is already running
+    if (isGameRunning) {
+      setError("Another instance is already running. Stop it first.");
+      return;
+    }
+    
+    // Show launch popup immediately
+    setShowLaunchPopup(true);
+    setTimeout(() => setShowLaunchPopup(false), 2000); // Hide after 2 seconds
     
     setError(null);
     try {
@@ -175,13 +193,21 @@ export default function Instances() {
   };
 
   const handleStop = async () => {
-    try {
-      if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
+    if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
+      try {
         await invoke("stop_game");
+      } catch (e: any) {
+        setError(String(e));
       }
-    } catch (e: any) {
-      setError(String(e));
     }
+  };
+
+  
+  const handleContextMenuStop = async (instance: InstanceMeta) => {
+    if (instance.name === runningInstance) {
+      await handleStop();
+    }
+    setContextMenu({ x: 0, y: 0, instance: null });
   };
 
   const handleOpenFolder = async (name: string, e?: React.MouseEvent) => {
@@ -207,29 +233,28 @@ export default function Instances() {
     }
   };
 
-  const handleContextMenu = (e: React.MouseEvent, name: string) => {
+  const handleContextMenu = (e: React.MouseEvent, instance: InstanceMeta) => {
     e.preventDefault();
-    setContextMenu({ x: e.clientX, y: e.clientY, name });
+    setContextMenu({ x: e.clientX, y: e.clientY, instance });
   };
 
   return (
-    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
-      className="flex flex-col h-full p-8" style={{ background: "transparent" }}>
-      <div className="flex justify-between items-end mb-8 pb-5 border-b divider relative z-10">
-        <div>
-          <p className="text-[10px] font-bold tracking-[0.25em] uppercase mb-1 text-accent">Local</p>
-          <h1 className="text-3xl font-bold text-white">Instances</h1>
-        </div>
-        <button onClick={openDialog} className="btn-accent flex items-center gap-2 px-5 py-2.5 rounded-sm">
-          <Plus size={16} /> New Instance
-        </button>
-      </div>
-
+    <motion.div className="flex flex-col h-screen p-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       {error && (
         <div className="mb-4 p-3 text-sm rounded-sm relative z-10 flex items-start justify-between gap-3"
           style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171" }}>
           <span>{error}</span>
           <button onClick={() => setError(null)} className="shrink-0"><X size={14} /></button>
+        </div>
+      )}
+
+      {/* Header with Create Instance button */}
+      {instances.length > 0 && (
+        <div className="mb-6 flex justify-between items-center">
+          <h1 className="text-2xl font-bold text-white">Instances</h1>
+          <button onClick={openDialog} className="btn-accent px-4 py-2 rounded-sm flex items-center gap-2">
+            <Plus size={14} /> Create Instance
+          </button>
         </div>
       )}
 
@@ -252,7 +277,7 @@ export default function Instances() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {instances.map((inst, i) => (
               <motion.div key={inst.name} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-                onContextMenu={(e) => handleContextMenu(e, inst.name)}
+                onContextMenu={(e) => handleContextMenu(e, inst)}
                 onClick={() => window.dispatchEvent(new CustomEvent("open-instance-details", { detail: { name: inst.name } }))}
                 transition={{ delay: i * 0.04 }} className="card panel-hover p-5 flex flex-col group cursor-pointer">
                 <div className="flex items-start justify-between mb-4">
@@ -280,16 +305,18 @@ export default function Instances() {
                     <Cpu size={11} />
                     <span className="text-[10px] font-medium uppercase tracking-wider">{inst.last_played}</span>
                   </div>
-                  <button onClick={e => { e.stopPropagation(); handleLaunch(inst.name); }} disabled={runningInstance === inst.name || isLaunching}
-                    className={`${runningInstance === inst.name || isLaunching ? "bg-gray-600 cursor-not-allowed text-white/60" : "btn-accent text-white"} flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-[10px] transition-colors`}>
+                  <button onClick={e => { e.stopPropagation(); handleLaunch(inst.name); }} disabled={isGameRunning || isLaunching}
+                    className={`${(isGameRunning || isLaunching) ? "bg-gray-600 cursor-not-allowed" : runningInstance === inst.name ? "bg-red-500 hover:bg-red-600" : "btn-accent"} flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-[10px] transition-colors text-white`}>
                     {isLaunching && launchingInstance === inst.name ? (
                       <div className="w-3 h-3 rounded-full border-2 border-white/30 border-t-white animate-spin" />
                     ) : runningInstance === inst.name ? (
-                      <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                      <X size={10} />
+                    ) : isGameRunning ? (
+                      <div className="w-3 h-3 rounded-full border border-gray-400" />
                     ) : (
                       <Play size={10} fill="white" />
                     )}
-                    {isLaunching && launchingInstance === inst.name ? "Starting" : runningInstance === inst.name ? "Running" : "Play"}
+                    {isLaunching && launchingInstance === inst.name ? "Starting" : runningInstance === inst.name ? "Stop" : isGameRunning ? "Busy" : "Play"}
                   </button>
                 </div>
               </motion.div>
@@ -305,28 +332,28 @@ export default function Instances() {
             className="fixed z-[100] w-44 py-1.5 rounded-sm shadow-2xl border divider"
             style={{ top: contextMenu.y, left: contextMenu.x, background: "var(--bg-panel)" }}>
             <button onClick={() => { 
-              window.dispatchEvent(new CustomEvent("open-instance-details", { detail: { name: contextMenu.name } }));
+              window.dispatchEvent(new CustomEvent("open-instance-details", { detail: { name: contextMenu.instance?.name || "" } }));
               setContextMenu(null); 
             }}
               className="w-full px-4 py-2 text-left text-xs font-semibold hover:bg-white/5 flex items-center gap-3 transition-colors">
               <Settings size={14} className="text-accent" /> View Details
             </button>
-            <button onClick={() => { handlePin(contextMenu.name); setContextMenu(null); }}
-              className="w-full px-4 py-2 text-left text-xs font-semibold hover:bg-white/5 flex items-center gap-3 transition-colors text-white">
-              <Pin size={14} className="text-accent" /> Pin Instance
+            <button onClick={() => { if (contextMenu.instance) { handlePin(contextMenu.instance.name); } setContextMenu(null); }}
+              className="w-full px-4 py-2 text-left text-xs font-semibold hover:bg-white/5 flex items-center gap-3 transition-colors">
+              <Pin size={14} className="text-accent" /> {contextMenu.instance?.pinned ? "Unpin" : "Pin"} Instance
             </button>
-            <button onClick={() => { handleOpenFolder(contextMenu.name); setContextMenu(null); }}
-              className="w-full px-4 py-2 text-left text-xs font-semibold hover:bg-white/5 flex items-center gap-3 transition-colors text-white">
-              <Folder size={14} className="text-muted" /> Open Folder
+            <button onClick={(e) => { if (contextMenu.instance) { handleFavourite(contextMenu.instance.name, e); } setContextMenu(null); }}
+              className="w-full px-4 py-2 text-left text-xs font-semibold hover:bg-white/5 flex items-center gap-3 transition-colors">
+              <Star size={14} style={{ color: contextMenu.instance?.favourite ? "var(--accent)" : "var(--text-muted)", fill: contextMenu.instance?.favourite ? "var(--accent)" : "none" }} />
+              {contextMenu.instance?.favourite ? "Remove from Favourites" : "Add to Favourites"}
             </button>
-            <div className="h-[1px] bg-white/5 my-1" />
-            {runningInstance === contextMenu.name && (
-              <button onClick={() => { handleStop(); setContextMenu(null); }}
-                className="w-full px-4 py-2 text-left text-xs font-semibold hover:bg-red-500/10 flex items-center gap-3 transition-colors text-red-400">
-                <X size={14} /> Stop Game
+            {runningInstance === contextMenu.instance?.name && (
+              <button onClick={() => { if (contextMenu.instance) { handleContextMenuStop(contextMenu.instance); } }}
+                className="w-full px-4 py-2 text-left text-xs font-semibold hover:bg-white/5 flex items-center gap-3 transition-colors text-red-400">
+                <X size={14} /> Stop Instance
               </button>
             )}
-            <button onClick={() => { setConfirmDelete(contextMenu.name); setContextMenu(null); }}
+            <button onClick={() => { if (contextMenu.instance) { setConfirmDelete(contextMenu.instance.name); } setContextMenu(null); }}
               className="w-full px-4 py-2 text-left text-xs font-semibold hover:bg-red-500/10 flex items-center gap-3 transition-colors text-red-400">
               <Trash2 size={14} /> Delete Instance
             </button>
@@ -355,6 +382,29 @@ export default function Instances() {
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* Launch Popup */}
+      <AnimatePresence>
+        {showLaunchPopup && (
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: 20 }}
+            className="fixed top-8 left-1/2 transform -translate-x-1/2 z-[120] px-6 py-4 rounded-sm shadow-2xl border divider"
+            style={{ background: "var(--bg-panel)" }}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center">
+                <Play size={16} className="text-green-500" fill="white" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-white">Launching Instance</p>
+                <p className="text-xs" style={{ color: "var(--text-muted)" }}>Starting Minecraft...</p>
+              </div>
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
 
@@ -402,7 +452,7 @@ export default function Instances() {
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-widest mb-2" style={{ color: "var(--text-secondary)" }}>Mod Loader</label>
                 <div className="grid grid-cols-4 gap-2">
-                  {["Vanilla", "Fabric", "Forge", "Quilt"].map(t => (
+                  {["Vanilla", "Fabric"].map(t => (
                     <button key={t} onClick={() => setNewType(t)} disabled={creating}
                       className="py-2.5 text-xs font-bold uppercase tracking-widest rounded-sm transition-all"
                       style={{

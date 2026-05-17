@@ -1,0 +1,8 @@
+local/
+config/
+data/
+instances/
+logs/
+*.log
+*.info
+*.jar

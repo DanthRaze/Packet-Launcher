@@ -1,38 +1,118 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ReactSkinview3d } from "react-skinview3d";
-import { Play, ChevronRight, X } from "lucide-react";
+import { Play, ChevronRight, X, Gamepad, Folder } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { invoke } from "@tauri-apps/api/core";
 
 interface NewsItem { id: string; title: string; shortDescription: string; longDescription?: string; image: string; }
 interface Profile { username: string; skin_url: string; uuid: string; }
+interface QuickPlayItem {
+  name: string;
+  type: "singleplayer" | "multiplayer";
+  ip?: string;
+  worldName?: string;
+  icon: string;
+}
 
 export default function Home() {
   const [news, setNews] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [packetUser, setPacketUser] = useState<any | null>(null);
   const [pinnedInstance, setPinnedInstance] = useState<string | null>(null);
   const [isLaunching, setIsLaunching] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [realWorlds, setRealWorlds] = useState<string[]>([]);
+  const realWorldsRef = useRef<string[]>([]);
+  const [quickPlayItems, setQuickPlayItems] = useState<QuickPlayItem[]>([]);
+  const [quickPlayConfirm, setQuickPlayConfirm] = useState<QuickPlayItem | null>(null);
+
+  const loadQuickPlayItems = (worldsList: string[]) => {
+    const saved = localStorage.getItem("packet_quickplay");
+    let items: QuickPlayItem[] = [];
+    if (saved) {
+      try { items = JSON.parse(saved); } catch {}
+    }
+    
+    let servers = items.filter(i => i.type === "multiplayer");
+    
+    let worlds: QuickPlayItem[] = [];
+    if (worldsList && worldsList.length > 0) {
+      worlds = worldsList.map(w => {
+        const existing = items.find(ex => ex.type === "singleplayer" && ex.worldName === w);
+        return existing || {
+          name: w,
+          type: "singleplayer",
+          worldName: w,
+          icon: "https://img.icons8.com/color/96/minecraft-dirt-block.png"
+        };
+      });
+      
+      worlds.sort((a, b) => {
+        const idxA = items.findIndex(ex => ex.type === "singleplayer" && ex.worldName === a.worldName);
+        const idxB = items.findIndex(ex => ex.type === "singleplayer" && ex.worldName === b.worldName);
+        if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+        if (idxA !== -1) return -1;
+        if (idxB !== -1) return 1;
+        return a.name.localeCompare(b.name);
+      });
+    }
+    
+    const finalItems = [
+      ...worlds.slice(0, 2),
+      ...servers.slice(0, 1)
+    ];
+    setQuickPlayItems(finalItems);
+  };
 
   const loadProfileAndPinned = async () => {
+    const savedUser = localStorage.getItem("packet_user");
+    if (savedUser) {
+      try { setPacketUser(JSON.parse(savedUser)); } catch {}
+    } else {
+      setPacketUser(null);
+    }
+
     if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
       try {
-        const p = await invoke<Profile | null>("get_saved_profile");
+        const p = await invoke<Profile | null>("refresh_saved_profile");
         if (p) setProfile(p);
         const insts = await invoke<any[]>("list_instances");
         const pinned = insts.find(i => i.pinned);
-        if (pinned) setPinnedInstance(pinned.name);
-        else if (insts.length > 0) setPinnedInstance(insts[0].name);
-      } catch {}
+        let activeInst = null;
+        if (pinned) {
+          setPinnedInstance(pinned.name);
+          activeInst = pinned.name;
+        } else if (insts.length > 0) {
+          setPinnedInstance(insts[0].name);
+          activeInst = insts[0].name;
+        }
+
+        if (activeInst) {
+          try {
+            const wList = await invoke<string[]>("list_singleplayer_worlds", { instanceName: activeInst });
+            setRealWorlds(wList);
+            realWorldsRef.current = wList;
+            loadQuickPlayItems(wList);
+          } catch {
+            loadQuickPlayItems([]);
+          }
+        } else {
+          loadQuickPlayItems([]);
+        }
+      } catch {
+        loadQuickPlayItems([]);
+      }
+    } else {
+      loadQuickPlayItems([]);
     }
   };
 
   useEffect(() => {
     loadProfileAndPinned();
     // News
-    const URL = "https://script.google.com/macros/s/AKfycby6VK3P4suZuA58VJA4QfuUBYtBLBxp7QaPREDNuYkuehFdZCVPai9N_MOeq3NdSUsq/exec";
+    const URL = "https://script.google.com/macros/s/AKfycby6dOIwEwKnwRYx_IwRe7s3jiMRzMDV84-Ot_0b45qBHG6KDvUzROhreQDvc9VZMizJ/exec";
     fetch(`${URL}?action=news`)
       .then(r => r.json())
       .then(d => { setNews(Array.isArray(d) ? d : []); setLoading(false); })
@@ -44,6 +124,11 @@ export default function Home() {
         const status = e.detail.status;
         setIsLaunching(status === "Launching" || status === "Loading");
         setIsRunning(status === "Running");
+        // Handle Stopped status to reset states
+        if (status === "Stopped") {
+          setIsLaunching(false);
+          setIsRunning(false);
+        }
       }
     };
     window.addEventListener("tauri://launch_status", handleLaunchStatus);
@@ -59,7 +144,37 @@ export default function Home() {
       });
     }
 
-    return () => window.removeEventListener("tauri://launch_status", handleLaunchStatus);
+    const handleProfileUpdate = (e: any) => {
+      if (e.detail) setProfile(e.detail);
+      else loadProfileAndPinned();
+    };
+    window.addEventListener("profile-updated" as any, handleProfileUpdate);
+
+    const handleUserUpdate = (e: any) => {
+      if (e.detail) {
+        setPacketUser(e.detail);
+      } else {
+        setPacketUser(null);
+      }
+    };
+    window.addEventListener("user-updated" as any, handleUserUpdate);
+
+    const handleQuickplayUpdate = () => {
+      loadQuickPlayItems(realWorldsRef.current);
+    };
+    window.addEventListener("quickplay-updated" as any, handleQuickplayUpdate);
+
+    const intervalId = setInterval(() => {
+      loadProfileAndPinned();
+    }, 600000); // 10 minutes
+
+    return () => {
+      window.removeEventListener("tauri://launch_status", handleLaunchStatus);
+      window.removeEventListener("profile-updated" as any, handleProfileUpdate);
+      window.removeEventListener("user-updated" as any, handleUserUpdate);
+      window.removeEventListener("quickplay-updated" as any, handleQuickplayUpdate);
+      clearInterval(intervalId);
+    };
   }, []);
 
   const handleLaunch = async () => {
@@ -67,11 +182,28 @@ export default function Home() {
       setError("No instances found. Create one in Instances first.");
       return;
     }
+    
+    if (isRunningState) {
+      try {
+        await invoke("stop_game");
+      } catch (e: any) {
+        setError(String(e));
+      }
+      return;
+    }
+    
     setError(null);
     try {
       const ramStr = localStorage.getItem('allocated_ram') || '4';
       const ram = parseInt(ramStr, 10) || 4;
-      await invoke("launch_instance", { instanceName: pinnedInstance, allocatedRamGb: ram });
+      const developerMode = localStorage.getItem('developer_mode') === 'true';
+      await invoke("launch_instance", { 
+        instanceName: pinnedInstance, 
+        allocatedRamGb: ram, 
+        developerMode,
+        serverIp: null,
+        quickplaySingleplayer: null
+      });
     } catch (e: any) {
       setError(String(e));
     }
@@ -83,7 +215,66 @@ export default function Home() {
   const [selectedNews, setSelectedNews] = useState<NewsItem | null>(null);
 
   // Skin URL: use Crafatar with UUID if logged in, else Steve
-  const skinUrl = profile?.skin_url || "https://mineskin.eu/skin/steve";
+  const [skinUrl, setSkinUrl] = useState("https://mineskin.eu/skin/steve");
+
+  useEffect(() => {
+    if (profile?.username) {
+      setSkinUrl(`https://mineskin.eu/skin/${profile.username}?t=${Date.now()}`);
+    } else if (packetUser?.Username) {
+      setSkinUrl(`https://mineskin.eu/skin/${packetUser.Username}?t=${Date.now()}`);
+    } else if (packetUser?.skinUrl) {
+      setSkinUrl(`${packetUser.skinUrl}${packetUser.skinUrl.includes('?') ? '&' : '?'}t=${Date.now()}`);
+    } else if (packetUser?.PFP) {
+      setSkinUrl(`${packetUser.PFP}${packetUser.PFP.includes('?') ? '&' : '?'}t=${Date.now()}`);
+    } else {
+      setSkinUrl("https://mineskin.eu/skin/steve");
+    }
+  }, [profile, packetUser]);
+
+  const handleQuickPlayLaunch = async (item: QuickPlayItem) => {
+    if (!pinnedInstance) {
+      setError("No instances found. Create one in Instances first.");
+      return;
+    }
+    
+    if (isRunningState) {
+      try {
+        await invoke("stop_game");
+      } catch (e: any) {
+        setError(String(e));
+      }
+      return;
+    }
+
+    setError(null);
+    setIsLaunching(true);
+    setQuickPlayConfirm(null);
+    try {
+      const ramStr = localStorage.getItem('allocated_ram') || '4';
+      const ram = parseInt(ramStr, 10) || 4;
+      const developerMode = localStorage.getItem('developer_mode') === 'true';
+      
+      const saved = localStorage.getItem("packet_quickplay");
+      let history: QuickPlayItem[] = [];
+      try { if (saved) history = JSON.parse(saved); } catch {}
+      history = history.filter(h => !(h.type === item.type && (h.worldName === item.worldName || h.ip === item.ip)));
+      history.unshift(item);
+      localStorage.setItem("packet_quickplay", JSON.stringify(history));
+      loadQuickPlayItems(realWorlds);
+
+      await invoke("launch_instance", { 
+        instanceName: pinnedInstance, 
+        allocatedRamGb: ram, 
+        developerMode,
+        serverIp: item.type === "multiplayer" ? item.ip : null,
+        quickplaySingleplayer: item.type === "singleplayer" ? item.worldName : null
+      });
+    } catch (e: any) {
+      setError(String(e));
+    } finally {
+      setIsLaunching(false);
+    }
+  };
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -108,7 +299,7 @@ export default function Home() {
         )}
         <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="text-center">
           <p className="text-xs font-semibold tracking-[0.3em] uppercase mb-1" style={{ color: "var(--text-secondary)" }}>Welcome back</p>
-          <h1 className="text-3xl font-bold text-white">{profile?.username || "Explorer"}</h1>
+          <h1 className="text-3xl font-bold text-white">{profile?.username || packetUser?.Username || "Explorer"}</h1>
           {pinnedInstance && (
             <p className="text-[10px] font-bold text-accent uppercase tracking-widest mt-2">Ready to play: {pinnedInstance}</p>
           )}
@@ -128,8 +319,10 @@ export default function Home() {
           onClick={handleLaunch} disabled={isLaunchingState || isRunningState}
           whileHover={!(isLaunchingState || isRunningState) ? { scale: 1.03 } : undefined} whileTap={!(isLaunchingState || isRunningState) ? { scale: 0.97 } : undefined}
           className={`group relative flex items-center gap-4 px-14 py-4 overflow-hidden rounded-sm transition-all ${
-            isLaunchingState || isRunningState
-              ? "bg-gray-600 cursor-not-allowed text-white/60"
+            isLaunchingState
+              ? "bg-yellow-600 cursor-not-allowed text-white"
+              : isRunningState
+              ? "bg-red-500 hover:bg-red-600 text-white"
               : "btn-accent"
           }`}
           style={!(isLaunchingState || isRunningState) ? { boxShadow: "0 4px 30px var(--accent-glow)" } : undefined}>
@@ -140,14 +333,56 @@ export default function Home() {
           {isLaunchingState ? (
             <div className="w-5 h-5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
           ) : isRunningState ? (
-            <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <X size={20} className="text-white" />
           ) : (
             <Play size={20} className="text-white" fill="white" />
           )}
           <span className="font-bold text-xl tracking-[0.25em] uppercase">
-            {isLaunchingState ? "Starting" : isRunningState ? "Running" : "Launch"}
+            {isLaunchingState ? "Starting" : isRunningState ? "Stop" : "Launch"}
           </span>
         </motion.button>
+
+        {/* Quick Play Panel */}
+        {quickPlayItems.length > 0 && (
+          <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}
+            className="mt-2 w-full max-w-lg px-5 py-3.5 rounded-sm border divider bg-white/[0.01] backdrop-blur-md">
+            <div className="flex items-center justify-between mb-2.5">
+              <h3 className="text-[10px] font-bold tracking-[0.25em] uppercase text-muted flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+                Quick Play
+              </h3>
+              <span className="text-[9px] font-semibold text-white/30 uppercase tracking-widest">Recent Activity</span>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              {quickPlayItems.map((item, idx) => (
+                <motion.div
+                  key={idx}
+                  whileHover={{ scale: 1.03, borderColor: "var(--accent)" }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => setQuickPlayConfirm(item)}
+                  className="group cursor-pointer p-3 rounded-sm border divider bg-panel/30 hover:bg-accent/5 transition-all flex flex-col justify-between min-h-[90px] relative overflow-hidden"
+                >
+                  <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Play size={10} className="text-accent" fill="var(--accent)" />
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <img src={item.icon} alt="" className="w-6 h-6 object-contain shrink-0 filter brightness-110 drop-shadow-[0_2px_8px_rgba(0,0,0,0.5)]" />
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-white truncate leading-snug group-hover:text-accent transition-colors">{item.name}</p>
+                      <p className="text-[9px] text-muted truncate mt-0.5 uppercase tracking-wider font-semibold">
+                        {item.type === "multiplayer" ? "Server" : "World"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-2 text-[9px] text-white/40 font-semibold truncate leading-none">
+                    {item.type === "multiplayer" ? item.ip : "Local File"}
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          </motion.div>
+        )}
       </div>
 
       {/* Right — News */}
@@ -209,6 +444,45 @@ export default function Home() {
                     {selectedNews.longDescription || "No further details available for this news item."}
                   </p>
                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Quick Play Confirm Modal */}
+      <AnimatePresence>
+        {quickPlayConfirm && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm" onClick={() => setQuickPlayConfirm(null)}>
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              className="w-full max-w-sm p-6 rounded-sm relative text-center"
+              style={{ background: "var(--bg-panel)", border: "1px solid var(--border-medium)" }}
+              onClick={e => e.stopPropagation()}>
+              
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-accent/10 border border-accent/25 flex items-center justify-center">
+                {quickPlayConfirm.type === "multiplayer" ? (
+                  <Gamepad size={28} className="text-accent" />
+                ) : (
+                  <Folder size={28} className="text-accent" />
+                )}
+              </div>
+
+              <h2 className="text-xl font-bold text-white mb-2">
+                {quickPlayConfirm.type === "multiplayer" ? "Quick Connect Server" : "Quick Launch World"}
+              </h2>
+              
+              <p className="text-xs text-muted mb-6 px-4 leading-relaxed">
+                Really Want to Play <strong className="text-white">{quickPlayConfirm.name}</strong>? 
+                This will automatically load your pinned instance <strong className="text-accent">{pinnedInstance || "None"}</strong> and jump directly in!
+              </p>
+
+              <div className="flex gap-3">
+                <button onClick={() => setQuickPlayConfirm(null)} className="btn-ghost flex-1 py-3 text-xs font-bold uppercase tracking-wider rounded-sm">
+                  Cancel
+                </button>
+                <button onClick={() => handleQuickPlayLaunch(quickPlayConfirm)} className="btn-accent flex-1 py-3 text-xs font-bold uppercase tracking-wider rounded-sm flex items-center justify-center gap-2">
+                  <Play size={12} fill="white" /> Let's Play!
+                </button>
               </div>
             </motion.div>
           </div>

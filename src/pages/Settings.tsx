@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { invoke } from "@tauri-apps/api/core";
 import { setAccentVars } from "../utils/theme";
@@ -47,6 +47,38 @@ export default function Settings() {
   const [wrapper, setWrapper] = useState("");
   const [postExit, setPostExit] = useState("");
   const [developerMode, setDeveloperMode] = useState(false);
+  const [developerUsername, setDeveloperUsername] = useState("Developer");
+
+  // Debounced save functions
+  const debouncedSaveJavaArgs = useCallback((value: string) => {
+    const timer = setTimeout(() => localStorage.setItem('java_args', value), 100);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const debouncedSaveEnvVars = useCallback((value: string) => {
+    const timer = setTimeout(() => localStorage.setItem('env_vars', value), 100);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const debouncedSavePreLaunch = useCallback((value: string) => {
+    const timer = setTimeout(() => localStorage.setItem('pre_launch', value), 100);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const debouncedSaveWrapper = useCallback((value: string) => {
+    const timer = setTimeout(() => localStorage.setItem('wrapper', value), 100);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const debouncedSavePostExit = useCallback((value: string) => {
+    const timer = setTimeout(() => localStorage.setItem('post_exit', value), 100);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const debouncedSaveDevUsername = useCallback((value: string) => {
+    const timer = setTimeout(() => localStorage.setItem('developer_username', value), 100);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Resource settings
   const [maxDownloads, setMaxDownloads] = useState(5);
@@ -82,6 +114,7 @@ export default function Settings() {
     setWrapper(localStorage.getItem('wrapper') || "");
     setPostExit(localStorage.getItem('post_exit') || "");
     setDeveloperMode(localStorage.getItem('developer_mode') === 'true');
+    setDeveloperUsername(localStorage.getItem('developer_username') || "Developer");
 
     // Resources
     setMaxDownloads(Number(localStorage.getItem('max_downloads')) || 5);
@@ -102,6 +135,16 @@ export default function Settings() {
       if (drpc) invoke("set_discord_rpc", { enabled: true }).catch(console.error);
       getVersion().then(setCurrentVersion).catch(() => {});
     }
+
+    const handleProfileUpdate = (e: any) => {
+      if (e.detail) {
+        setProfile(e.detail);
+        setAuthStatus("in");
+      }
+    };
+    window.addEventListener("profile-updated" as any, handleProfileUpdate);
+
+    return () => window.removeEventListener("profile-updated" as any, handleProfileUpdate);
   }, []);
 
   const handleCheckUpdates = async () => {
@@ -246,7 +289,7 @@ export default function Settings() {
                 <Section label="Account">
                    <div className="flex items-center gap-4">
                     <div className="w-12 h-12 rounded-sm bg-primary/20 border divider flex items-center justify-center overflow-hidden">
-                       <img src={profile ? `https://crafatar.com/avatars/${profile.username}?size=100&overlay` : "https://mineskin.eu/skin/steve"} className="w-full h-full object-cover" />
+                        <img src={profile ? `https://mineskin.eu/armor/body/${profile.username}` : "https://mineskin.eu/armor/body/steve"} className="w-full h-full object-cover" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-white truncate">{profile?.username || "Guest"}</p>
@@ -345,12 +388,12 @@ export default function Settings() {
                   <div className="space-y-4">
                     <div>
                       <label className="block text-[10px] font-bold text-muted uppercase tracking-widest mb-2">JVM Arguments</label>
-                      <textarea value={javaArgs} onChange={e => { setJavaArgs(e.target.value); localStorage.setItem('java_args', e.target.value); }}
+                      <textarea value={javaArgs} onChange={e => { setJavaArgs(e.target.value); debouncedSaveJavaArgs(e.target.value); }}
                         className="field w-full h-24 p-4 text-xs font-mono rounded-sm" />
                     </div>
                     <div>
                       <label className="block text-[10px] font-bold text-muted uppercase tracking-widest mb-2">Environmental Variables (key=val;key2=val2)</label>
-                      <input type="text" value={envVars} onChange={e => { setEnvVars(e.target.value); localStorage.setItem('env_vars', e.target.value); }}
+                      <input type="text" value={envVars} onChange={e => { setEnvVars(e.target.value); debouncedSaveEnvVars(e.target.value); }}
                         className="field w-full p-3 text-xs font-mono rounded-sm" />
                     </div>
                   </div>
@@ -358,19 +401,44 @@ export default function Settings() {
 
 
                 <Section label="Developer Mode">
-                  <div className="flex items-center justify-between p-2">
-                    <div>
-                      <p className="text-sm font-bold text-white">Enable Developer Mode</p>
-                      <p className="text-xs text-muted mt-0.5">Allow launching instances without authentication for testing</p>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between p-2">
+                      <div>
+                        <p className="text-sm font-bold text-white">Enable Developer Mode</p>
+                        <p className="text-xs text-muted mt-0.5">Allow launching instances without authentication for testing</p>
+                      </div>
+                      <button onClick={() => {
+                        const next = !developerMode;
+                        setDeveloperMode(next);
+                        localStorage.setItem('developer_mode', String(next));
+                      }}
+                        className={`w-10 h-5 rounded-full relative transition-colors ${developerMode ? "bg-accent" : "bg-white/10"}`}>
+                         <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${developerMode ? "left-6" : "left-1"}`} />
+                       </button>
                     </div>
-                    <button onClick={() => {
-                      const next = !developerMode;
-                      setDeveloperMode(next);
-                      localStorage.setItem('developer_mode', String(next));
-                    }}
-                      className={`w-10 h-5 rounded-full relative transition-colors ${developerMode ? "bg-accent" : "bg-white/10"}`}>
-                       <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${developerMode ? "left-6" : "left-1"}`} />
-                     </button>
+                    <div>
+                      <label className="block text-[10px] font-bold text-muted uppercase tracking-wider mb-1">Developer Username</label>
+                      <input 
+                        type="text" 
+                        value={developerUsername} 
+                        onChange={async (e) => { 
+                          setDeveloperUsername(e.target.value); 
+                          debouncedSaveDevUsername(e.target.value);
+                          // Also save to backend for game to use
+                          if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
+                            try {
+                              await invoke("save_developer_username", { username: e.target.value });
+                            } catch (err) {
+                              console.error("Failed to save developer username:", err);
+                            }
+                          }
+                        }}
+                        disabled={!developerMode}
+                        placeholder="Developer" 
+                        className="field w-full p-3 text-[10px] rounded-sm focus:outline-none focus:ring-2 focus:ring-accent/50" 
+                      />
+                      <p className="text-xs text-muted mt-1">Custom username when Developer Mode is enabled</p>
+                    </div>
                   </div>
                 </Section>
 
@@ -378,15 +446,15 @@ export default function Settings() {
                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div>
                         <label className="text-[9px] font-bold text-muted uppercase block mb-1.5">Pre-Launch</label>
-                        <input type="text" value={preLaunch} onChange={e => { setPreLaunch(e.target.value); localStorage.setItem('pre_launch', e.target.value); }} className="field w-full p-3 text-[10px] rounded-sm" placeholder="path/to/script" />
+                        <input type="text" value={preLaunch} onChange={e => { setPreLaunch(e.target.value); debouncedSavePreLaunch(e.target.value); }} className="field w-full p-3 text-[10px] rounded-sm" placeholder="path/to/script" />
                       </div>
                       <div>
                         <label className="text-[9px] font-bold text-muted uppercase block mb-1.5">Wrapper</label>
-                        <input type="text" value={wrapper} onChange={e => { setWrapper(e.target.value); localStorage.setItem('wrapper', e.target.value); }} className="field w-full p-3 text-[10px] rounded-sm" placeholder="e.g. primusrun" />
+                        <input type="text" value={wrapper} onChange={e => { setWrapper(e.target.value); debouncedSaveWrapper(e.target.value); }} className="field w-full p-3 text-[10px] rounded-sm" placeholder="e.g. primusrun" />
                       </div>
                       <div>
                         <label className="text-[9px] font-bold text-muted uppercase block mb-1.5">Post-Exit</label>
-                        <input type="text" value={postExit} onChange={e => { setPostExit(e.target.value); localStorage.setItem('post_exit', e.target.value); }} className="field w-full p-3 text-[10px] rounded-sm" placeholder="path/to/script" />
+                        <input type="text" value={postExit} onChange={e => { setPostExit(e.target.value); debouncedSavePostExit(e.target.value); }} className="field w-full p-3 text-[10px] rounded-sm" placeholder="path/to/script" />
                       </div>
                    </div>
                 </Section>

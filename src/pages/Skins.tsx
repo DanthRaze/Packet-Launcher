@@ -15,9 +15,30 @@ export default function Skins() {
   const [customSkinUrl, setCustomSkinUrl] = useState("");
 
   useEffect(() => {
-    invoke<any>("get_saved_profile").then(p => {
-      if (p?.skin_url) setSkinUrl(p.skin_url);
-    }).catch(() => {});
+    const loadDefaultSkin = async () => {
+      try {
+        const p = await invoke<any>("refresh_saved_profile");
+        if (p?.username) {
+          setSkinUrl(`https://mineskin.eu/skin/${p.username}?t=${Date.now()}`);
+          return;
+        }
+      } catch {}
+
+      const savedUser = localStorage.getItem("packet_user");
+      if (savedUser) {
+        try {
+          const user = JSON.parse(savedUser);
+          if (user.skinUrl) {
+            setSkinUrl(`${user.skinUrl}${user.skinUrl.includes('?') ? '&' : '?'}t=${Date.now()}`);
+          } else if (user.PFP) {
+            setSkinUrl(`${user.PFP}${user.PFP.includes('?') ? '&' : '?'}t=${Date.now()}`);
+          } else if (user.Username) {
+            setSkinUrl(`https://mineskin.eu/skin/${user.Username}?t=${Date.now()}`);
+          }
+        } catch {}
+      }
+    };
+    loadDefaultSkin();
   }, []);
 
   const handleFileSelection = async (path: string) => {
@@ -61,9 +82,21 @@ export default function Skins() {
       const blob = await res.blob();
       const arrayBuffer = await blob.arrayBuffer();
       setSkinData(new Uint8Array(arrayBuffer));
-      setSkinUrl(url + "?t=" + Date.now());
+      const skinWithTime = url + "?t=" + Date.now();
+      setSkinUrl(skinWithTime);
       setStatus({ type: "success", msg: `Skin for ${username} loaded!` });
       console.log("Skin loaded successfully for:", username);
+
+      const userStr = localStorage.getItem("packet_user");
+      if (userStr) {
+        try {
+          const user = JSON.parse(userStr);
+          user.Username = username.trim();
+          user.skinUrl = skinWithTime;
+          localStorage.setItem("packet_user", JSON.stringify(user));
+          window.dispatchEvent(new CustomEvent("user-updated", { detail: user }));
+        } catch {}
+      }
     } catch (e) {
       console.error("Failed to fetch skin:", e);
       setStatus({ type: "error", msg: "Could not find skin for that username." });
@@ -81,10 +114,21 @@ export default function Skins() {
       const blob = await res.blob();
       const arrayBuffer = await blob.arrayBuffer();
       setSkinData(new Uint8Array(arrayBuffer));
-      setSkinUrl(customSkinUrl.trim() + "?t=" + Date.now());
+      const skinWithTime = customSkinUrl.trim() + "?t=" + Date.now();
+      setSkinUrl(skinWithTime);
       setStatus({ type: "success", msg: "Skin loaded from URL!" });
       setCustomSkinUrl("");
       console.log("Skin loaded successfully from URL");
+
+      const userStr = localStorage.getItem("packet_user");
+      if (userStr) {
+        try {
+          const user = JSON.parse(userStr);
+          user.skinUrl = skinWithTime;
+          localStorage.setItem("packet_user", JSON.stringify(user));
+          window.dispatchEvent(new CustomEvent("user-updated", { detail: user }));
+        } catch {}
+      }
     } catch (e) {
       console.error("Failed to fetch skin from URL:", e);
       setStatus({ type: "error", msg: "Could not load skin from that URL." });
@@ -97,11 +141,34 @@ export default function Skins() {
     try {
       await invoke("upload_skin", { data: Array.from(skinData) });
       setStatus({ type: "success", msg: "Skin applied successfully!" });
-      // Refresh skin URL from profile
       const p = await invoke<any>("get_saved_profile");
       if (p?.skin_url) setSkinUrl(p.skin_url + "?t=" + Date.now());
       setSkinData(null);
+      window.dispatchEvent(new CustomEvent("profile-updated", { detail: p }));
+
+      const userStr = localStorage.getItem("packet_user");
+      if (userStr) {
+        try {
+          const user = JSON.parse(userStr);
+          user.skinUrl = skinUrl;
+          localStorage.setItem("packet_user", JSON.stringify(user));
+          window.dispatchEvent(new CustomEvent("user-updated", { detail: user }));
+        } catch {}
+      }
     } catch (e) {
+      // Even if official upload fails, if they are community user we still save it!
+      const userStr = localStorage.getItem("packet_user");
+      if (userStr) {
+        try {
+          const user = JSON.parse(userStr);
+          user.skinUrl = skinUrl;
+          localStorage.setItem("packet_user", JSON.stringify(user));
+          window.dispatchEvent(new CustomEvent("user-updated", { detail: user }));
+          setStatus({ type: "success", msg: "Skin applied locally to your launcher profile!" });
+          setSkinData(null);
+          return;
+        } catch {}
+      }
       setStatus({ type: "error", msg: String(e) });
     }
   };

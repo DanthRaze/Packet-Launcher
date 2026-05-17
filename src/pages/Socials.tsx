@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Send, User, Shield, Star, X, Users, Trash2, LogIn, UserPlus, Clock, LogOut, Camera, MessageSquare, Gamepad, Check } from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 
-const BACKEND_URL = "https://script.google.com/macros/s/AKfycby6VK3P4suZuA58VJA4QfuUBYtBLBxp7QaPREDNuYkuehFdZCVPai9N_MOeq3NdSUsq/exec";
+const BACKEND_URL = "https://script.google.com/macros/s/AKfycby6dOIwEwKnwRYx_IwRe7s3jiMRzMDV84-Ot_0b45qBHG6KDvUzROhreQDvc9VZMizJ/exec";
 
 interface UserData {
   Username: string;
@@ -478,7 +478,7 @@ export default function Socials() {
                     <div className="flex items-center gap-3 mb-3">
                       <div className="relative">
                         <div className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center border border-white/10 overflow-hidden">
-                          <img src={friend.pfp || `https://mineskin.eu/avatar/${friend.username}`} alt="" className="w-full h-full object-cover" />
+                          <img src={friend.pfp || `https://mineskin.eu/armor/body/${friend.username}`} alt="" className="w-full h-full object-cover" />
                         </div>
                         <div className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-[#111113] ${friend.onlineStatus === 'Online' ? 'bg-emerald-500' : 'bg-zinc-600'}`} />
                       </div>
@@ -523,7 +523,7 @@ export default function Socials() {
                 <div key={req.username} className="bg-[#111113] border border-white/5 p-4 rounded-sm flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center border border-white/10 overflow-hidden">
-                      <img src={req.pfp || `https://mineskin.eu/avatar/${req.username}`} alt="" className="w-full h-full object-cover" />
+                      <img src={req.pfp || `https://mineskin.eu/armor/body/${req.username}`} alt="" className="w-full h-full object-cover" />
                     </div>
                     <div className="min-w-0">
                       <p className="font-bold text-sm text-white truncate">{req.username}</p>
@@ -691,7 +691,7 @@ export default function Socials() {
             className="absolute top-0 right-0 w-80 h-full bg-[#0d0d0f] border-l border-white/5 shadow-2xl z-50 flex flex-col">
             <div className="p-4 border-b border-white/5 flex items-center justify-between bg-white/[0.02]">
               <div className="flex items-center gap-3">
-                <img src={`https://mineskin.eu/avatar/${activeChat}`} className="w-8 h-8 rounded" alt="" />
+                <img src={`https://mineskin.eu/armor/body/${activeChat}`} className="w-8 h-8 rounded object-cover" alt="" />
                 <p className="font-bold text-sm text-white">{activeChat}</p>
               </div>
               <button onClick={() => setActiveChat(null)} className="p-1.5 hover:bg-white/5 rounded text-white/40 hover:text-white"><X size={18} /></button>

@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Packet Launcher",
-  "version": "0.5.0",
+  "version": "1.0.0",
   "identifier": "com.packet.launcher",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -31,7 +31,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://script.google.com/macros/s/AKfycby6VK3P4suZuA58VJA4QfuUBYtBLBxp7QaPREDNuYkuehFdZCVPai9N_MOeq3NdSUsq/exec?action=update"
+        "https://script.google.com/macros/s/AKfycby6dOIwEwKnwRYx_IwRe7s3jiMRzMDV84-Ot_0b45qBHG6KDvUzROhreQDvc9VZMizJ/exec?action=update"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDEzNTY5QzM0MTQxRTdCNzMKUldSemV4NFVOSnhXRTJXNFRnWE1UOEIvU2lmeHBGMGwwWElOd0ZXbUpQNlJaalEzY3FsUzF4L3gK"
     }

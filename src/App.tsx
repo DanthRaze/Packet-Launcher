@@ -21,7 +21,7 @@ import SocialsPage from "./pages/Socials.tsx";
 import SettingsPage from "./pages/Settings.tsx";
 
 
-const BACKEND_URL = "https://script.google.com/macros/s/AKfycby6VK3P4suZuA58VJA4QfuUBYtBLBxp7QaPREDNuYkuehFdZCVPai9N_MOeq3NdSUsq/exec";
+const BACKEND_URL = "https://script.google.com/macros/s/AKfycby6dOIwEwKnwRYx_IwRe7s3jiMRzMDV84-Ot_0b45qBHG6KDvUzROhreQDvc9VZMizJ/exec";
 
 interface InstanceMeta { name: string; instance_type: string; version: string; last_played: string; favourite: boolean; }
 
@@ -205,26 +205,16 @@ function Sidebar() {
 }
 
 function StatusBadge({ isGameRunning, isLaunching, onStopGame }: { isGameRunning: boolean; isLaunching: boolean; onStopGame: () => void }) {
-  // Only show badge when launching or running
-  if (!isLaunching && !isGameRunning) {
-    return (
-      <div className="absolute bottom-6 right-6 z-40 flex items-center gap-2">
-        {/* Download pill (only shown when minimised) */}
-        <div id="download-anchor" />
-      </div>
-    );
-  }
-
   const getStatusText = () => {
     if (isLaunching) return "Starting";
     if (isGameRunning) return "Running";
-    return "";
+    return "No Instances Running";
   };
 
   const getStatusColor = () => {
     if (isLaunching) return "bg-yellow-500";
     if (isGameRunning) return "bg-emerald-500";
-    return "bg-gray-500";
+    return "bg-red-500";
   };
 
   return (
@@ -394,18 +384,19 @@ function App() {
         <div className="flex flex-1 overflow-hidden relative z-10">
           <Sidebar />
           <div className="flex-1 relative overflow-hidden" style={{ background: "transparent" }}>
-            <StatusBadge isGameRunning={isGameRunning} isLaunching={isLaunching} onStopGame={async () => {
-              if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
-                try {
-                  const { invoke } = await import("@tauri-apps/api/core");
-                  await invoke("stop_game");
-                } catch (e) {
-                  console.error("Failed to stop game:", e);
-                }
-              }
-            }} />
             <DownloadManager />
             <AnimatedRoutes />
+            {(isGameRunning || isLaunching) && (
+              <StatusBadge 
+                isGameRunning={isGameRunning} 
+                isLaunching={isLaunching} 
+                onStopGame={() => {
+                  if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
+                    invoke("stop_game").catch(() => {});
+                  }
+                }} 
+              />
+            )}
 
             <AnimatePresence>
               {showUpdateWelcome && (

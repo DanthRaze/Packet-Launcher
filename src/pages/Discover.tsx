@@ -46,14 +46,17 @@ export default function Discover() {
   const [_selectedVersion, setSelectedVersion] = useState<any>(null);
   const [mcVersion, setMcVersion] = useState("1.21.4");
   const [allMcVersions, setAllMcVersions] = useState<string[]>([]);
+  const [showDoubleConfirm, setShowDoubleConfirm] = useState(false);
+  const [pinnedInstance, setPinnedInstance] = useState<string | null>(null);
 
   useEffect(() => {
     const fetch_ = async () => {
       setLoading(true);
       try {
         if (activeTab === "servers") {
-          const res = await fetch("https://script.google.com/macros/s/AKfycby6VK3P4suZuA58VJA4QfuUBYtBLBxp7QaPREDNuYkuehFdZCVPai9N_MOeq3NdSUsq/exec?action=servers");
-          const data = await res.json();
+          const data = ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__)
+            ? await invoke<any>("fetch_servers")
+            : await (await fetch("https://script.google.com/macros/s/AKfycby6dOIwEwKnwRYx_IwRe7s3jiMRzMDV84-Ot_0b45qBHG6KDvUzROhreQDvc9VZMizJ/exec?action=servers")).json();
           setResults(data.map((s: any) => ({
             project_id: s.IP,
             title: s.Name,
@@ -65,11 +68,18 @@ export default function Discover() {
           })));
         } else {
           const type = MODRINTH_TYPE[activeTab];
-          const facet = `[["project_type:${type}"]]`;
-          const url = `https://api.modrinth.com/v2/search?query=${encodeURIComponent(query)}&facets=${encodeURIComponent(facet)}&limit=12`;
-          const res = await fetch(url);
-          const data = await res.json();
-          setResults(data.hits || []);
+          if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
+            const data = await invoke<any>("modrinth_search", { query, projectType: type, limit: 12 });
+            setResults(data.hits || []);
+          } else {
+            const facets = (type === "mod" || type === "modpack")
+              ? [[`project_type:${type}`], ["categories:fabric"]]
+              : [[`project_type:${type}`]];
+            const url = `https://api.modrinth.com/v2/search?query=${encodeURIComponent(query)}&facets=${encodeURIComponent(JSON.stringify(facets))}&limit=12`;
+            const res = await fetch(url);
+            const data = await res.json();
+            setResults(data.hits || []);
+          }
         }
       } catch { setResults([]); }
       setLoading(false);
@@ -90,21 +100,88 @@ export default function Discover() {
     setInstallError(null);
     setAvailableVersions([]);
     setSelectedVersion(null);
+    setShowDoubleConfirm(false);
     
     if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
       try {
         const insts = await invoke<InstanceMeta[]>("list_instances");
         setInstances(insts);
-        if (insts.length > 0) setSelectedInstance(insts[0].name);
-        else setSelectedInstance("");
-      } catch { setInstances([]); }
+        if (insts.length > 0) {
+          setSelectedInstance(insts[0].name);
+          const pinned = insts.find((i: any) => i.pinned) || insts[0];
+          setPinnedInstance(pinned.name);
+        } else {
+          setSelectedInstance("");
+          setPinnedInstance(null);
+        }
+      } catch { 
+        setInstances([]); 
+        setPinnedInstance(null);
+      }
     }
 
     try {
-      const vRes = await fetch(`https://api.modrinth.com/v2/project/${p.project_id}/version`);
-      const vers = await vRes.json();
-      setAvailableVersions(vers);
+      if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
+        const vers = await invoke<any>("modrinth_project_versions", { projectId: p.project_id });
+        setAvailableVersions(vers);
+      } else {
+        const vRes = await fetch(`https://api.modrinth.com/v2/project/${p.project_id}/version`);
+        const vers = await vRes.json();
+        setAvailableVersions(vers);
+      }
     } catch {}
+  };
+
+  const handlePlayServer = async () => {
+    if (!pinnedInstance) {
+      setInstallError("No pinned instance found. Please pin or create an instance first.");
+      return;
+    }
+    if (!showDoubleConfirm) {
+      setShowDoubleConfirm(true);
+      return;
+    }
+    
+    setInstalling(true);
+    setInstallError(null);
+    try {
+      const ramStr = localStorage.getItem('allocated_ram') || '4';
+      const ram = parseInt(ramStr, 10) || 4;
+      const developerMode = localStorage.getItem('developer_mode') === 'true';
+      
+      if (selected) {
+        const historyStr = localStorage.getItem("packet_quickplay");
+        let history = [];
+        try {
+          if (historyStr) history = JSON.parse(historyStr);
+        } catch {}
+        
+        history = history.filter((item: any) => item.type !== "multiplayer");
+        
+        history.unshift({
+          name: selected.title,
+          type: "multiplayer",
+          ip: selected.project_id,
+          icon: selected.icon_url || "https://img.icons8.com/color/96/minecraft-logo.png"
+        });
+        
+        localStorage.setItem("packet_quickplay", JSON.stringify(history));
+        window.dispatchEvent(new Event("quickplay-updated"));
+      }
+
+      await invoke("launch_instance", { 
+        instanceName: pinnedInstance, 
+        allocatedRamGb: ram, 
+        developerMode,
+        serverIp: selected?.project_id,
+        quickplaySingleplayer: null
+      });
+      setSelected(null);
+    } catch (e: any) {
+      setInstallError(String(e));
+    } finally {
+      setInstalling(false);
+    }
   };
 
   const handleInstall = async () => {
@@ -149,27 +226,35 @@ export default function Discover() {
       if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
         if (activeTab === "modpack") {
           targetInstance = selected.title.replace(/[^a-zA-Z0-9_\-]/g, "_").substring(0, 40);
-          await invoke("create_instance", {
-            name: targetInstance,
-            instanceType: "Fabric",
-            version: mcVersion
+          
+          // Use the new install_mr_pack function for modpacks
+          await invoke("install_mr_pack", {
+            url: file.url,
+            instanceName: targetInstance,
+            mcVersion: mcVersion,
+            downloadId: downloadId,
+            metadata: {
+              name: selected.title,
+              icon_url: selected.icon_url,
+              description: selected.description
+            }
           });
           window.dispatchEvent(new Event("instances-updated"));
-          targetFolder = "mods";
+        } else {
+          // Use regular download_file for other content types
+          invoke("download_file", {
+            url: file.url,
+            instanceName: targetInstance,
+            targetFolder: targetFolder,
+            filename: file.filename,
+            downloadId: downloadId,
+            metadata: {
+              name: selected.title,
+              icon_url: selected.icon_url,
+              description: selected.description
+            }
+          }).catch(console.error);
         }
-
-        invoke("download_file", {
-          url: file.url,
-          instanceName: targetInstance,
-          targetFolder: targetFolder,
-          filename: file.filename,
-          downloadId: downloadId,
-          metadata: {
-            name: selected.title,
-            icon_url: selected.icon_url,
-            description: selected.description
-          }
-        }).catch(console.error);
       } else {
         console.log("Would download:", file.url, "to", targetInstance, "/", targetFolder);
       }
@@ -279,7 +364,25 @@ export default function Discover() {
             )}
 
             <div className="mb-6">
-              {activeTab === "modpack" ? (
+              {activeTab === "servers" ? (
+                <div className="space-y-4">
+                  <div className="p-4 rounded-sm text-sm" style={{ background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.15)", color: "var(--text-primary)" }}>
+                    <p className="font-bold text-green-400 mb-1 flex items-center gap-1.5">
+                      <Gamepad size={14} /> Server Connection Ready
+                    </p>
+                    <p className="text-xs leading-relaxed text-muted">
+                      This will launch your pinned instance <strong className="text-accent">{pinnedInstance || "None"}</strong> and automatically connect you to <strong className="text-white">{selected.project_id}</strong> on startup.
+                    </p>
+                  </div>
+                  {showDoubleConfirm && (
+                    <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }}
+                      className="p-3.5 rounded-sm text-xs font-bold text-center uppercase tracking-widest text-white"
+                      style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)" }}>
+                      ⚠️ Really Want to Play this Server?
+                    </motion.div>
+                  )}
+                </div>
+              ) : activeTab === "modpack" ? (
                 <div className="space-y-4">
                   <div>
                     <label className="block text-xs font-semibold tracking-widest uppercase mb-2" style={{ color: "var(--text-secondary)" }}>
@@ -319,13 +422,16 @@ export default function Discover() {
               )}
             </div>
 
-            <button onClick={handleInstall}
-              disabled={installing || (activeTab !== "modpack" && instances.length === 0)}
+            <button onClick={activeTab === "servers" ? handlePlayServer : handleInstall}
+              disabled={installing || (activeTab !== "modpack" && activeTab !== "servers" && instances.length === 0) || (activeTab === "servers" && !pinnedInstance)}
               className="btn-accent w-full py-3.5 rounded-sm flex items-center justify-center gap-3 disabled:opacity-50">
-              {installing
-                ? <><div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" /> Installing...</>
-                : <><Download size={16} /> Install — Download will track in top right</>
-              }
+              {installing ? (
+                <><div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" /> {activeTab === "servers" ? "Launching Minecraft..." : "Installing..."}</>
+              ) : activeTab === "servers" ? (
+                <><Gamepad size={16} /> {showDoubleConfirm ? "Yes, Let's Play!" : "Play Server"}</>
+              ) : (
+                <><Download size={16} /> Install — Download will track in top right</>
+              )}
             </button>
           </motion.div>
         </div>
