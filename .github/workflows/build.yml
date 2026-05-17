@@ -11,6 +11,7 @@ jobs:
     name: Build (${{ matrix.name }})
     permissions:
       contents: write
+
     strategy:
       fail-fast: false
       matrix:
@@ -19,34 +20,47 @@ jobs:
             os: macos-latest
             name: "MacOS Intel chips"
             args: "--target x86_64-apple-darwin"
+
           - platform: macos-latest
             os: macos-latest
             name: "MacOS Apple Silicon"
             args: "--target aarch64-apple-darwin"
+
           - platform: windows-latest
             os: windows-latest
             name: "Windows x64"
             args: ""
+
           - platform: ubuntu-latest
             os: ubuntu-latest
             name: "Linux x64"
             args: ""
+
     runs-on: ${{ matrix.os }}
+
     steps:
+      # Windows workaround
       - name: Download Repository Archive (Windows Bypass)
         if: matrix.platform == 'windows-latest'
         run: |
-          curl -L -o repo.zip "https://github.com{{ github.ref_name }}.zip"
+          curl -L -o repo.zip "https://github.com/${{ github.repository }}/archive/refs/tags/${{ github.ref_name }}.zip"
+
           powershell Expand-Archive repo.zip -DestinationPath temp_extract
-          mv temp_extract/Packet-Launcher-*/* .
+
+          mv temp_extract/*/* .
+
           rm -rf repo.zip temp_extract
+
           git init .
+
           git config --global user.email "action@github.com"
           git config --global user.name "GitHub Action"
+
           git add .
           git commit -m "temp"
         shell: bash
 
+      # Normal checkout for macOS + Linux
       - name: Checkout repository
         if: matrix.platform != 'windows-latest'
         uses: actions/checkout@v4
@@ -90,7 +104,13 @@ jobs:
         if: matrix.platform == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libsoup-3.0-dev
 
       - name: Build the app
         uses: tauri-apps/tauri-action@v0
@@ -98,10 +118,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'Packet Launcher v__VERSION__'
-          releaseBody: 'Automated release from GitHub Actions'
+          releaseName: "Packet Launcher v__VERSION__"
+          releaseBody: "Automated release from GitHub Actions"
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
