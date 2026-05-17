@@ -1,15 +1,14 @@
 name: Release
+
 on:
   push:
-    branches:
-      - main
     tags:
-      - 'v*'
+      - 'v*' # Triggers ONLY on version tags to prevent double-building
   workflow_dispatch:
 
 jobs:
   release:
-    name: Build (${{ matrix.name }}) # FIX: This gives you clean readable names on GitHub
+    name: Build (${{ matrix.name }})
     permissions:
       contents: write
     strategy:
@@ -56,6 +55,7 @@ jobs:
         run: git config --global --add safe.directory "*"
         shell: bash
 
+      制造
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
@@ -100,9 +100,9 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'v1.0.7' }}
+          tagName: ${{ github.ref_name }}
           releaseName: 'Packet Launcher v__VERSION__'
-          releaseBody: 'This is Packet Launcher.'
+          releaseBody: 'Automated release from GitHub Actions'
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
