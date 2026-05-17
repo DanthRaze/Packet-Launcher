@@ -1,6 +1,6 @@
 [package]
 name = "packet-launcher"
-version = "3.1.0"
+version = "3.1.1"
 description = "A Minecraft Launcher"
 authors = ["you"]
 edition = "2021"

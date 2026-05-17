@@ -82,8 +82,11 @@ jobs:
 
           mkdir -p target/universal-macos
 
-          cp -R "target/x86_64-apple-darwin/release/bundle/macos/$APP_NAME" \
-                "target/universal-macos/$APP_NAME"
+          APP_PATH=$(find target/x86_64-apple-darwin/release/bundle -name "$APP_NAME" | head -n 1)
+
+          echo "Found app at: $APP_PATH"
+
+          cp -R "$APP_PATH" "target/universal-macos/$APP_NAME"
 
           lipo -create \
             "target/x86_64-apple-darwin/release/packet-launcher" \
@@ -100,6 +103,14 @@ jobs:
           create-dmg \
             "target/universal-macos/Packet Launcher.app" \
             target/final
+
+      - name: Rename DMG
+        if: matrix.os == 'macos-latest'
+        run: |
+          DMG_FILE=$(find target/final -name "*.dmg" | head -n 1)
+
+          mv "$DMG_FILE" \
+             "target/final/Packet-Launcher-macos-universal.dmg"
 
       - name: Create Universal tar.gz
         if: matrix.os == 'macos-latest'
@@ -132,6 +143,7 @@ jobs:
       - name: Build Windows App
         if: matrix.os == 'windows-latest'
         uses: tauri-apps/tauri-action@v0
+
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
