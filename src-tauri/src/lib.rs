@@ -985,7 +985,7 @@ async fn refresh_saved_profile() -> Option<MinecraftProfile> {
 #[command]
 fn set_discord_rpc(enabled: bool) -> Result<(), String> {
     let mut client_lock = DISCORD_CLIENT.lock().unwrap();
-    
+
     if !enabled {
         if let Some(mut client) = client_lock.take() {
             let _ = client.close();
@@ -994,36 +994,28 @@ fn set_discord_rpc(enabled: bool) -> Result<(), String> {
     }
 
     if client_lock.is_none() {
-        let mut client = DiscordIpcClient::new("1348123456789012345");
-        if client.connect().is_ok() {
-            *client_lock = Some(client);
+        let mut client = DiscordIpcClient::new("1505576536512921610");
+
+        if let Err(e) = client.connect() {
+            return Err(format!("Discord RPC connect failed: {:?}", e));
         }
+
+        *client_lock = Some(client);
     }
 
     if let Some(client) = client_lock.as_mut() {
-        let _ = client.set_activity(discord_rich_presence::activity::Activity::new()
-            .state("Main Menu")
-            .details("Launching Minecraft")
-            .assets(discord_rich_presence::activity::Assets::new()
-                .large_image("logo")
-                .large_text("Packet Launcher"))
+        let _ = client.set_activity(
+            discord_rich_presence::activity::Activity::new()
+                .state("Playing on Packet Launcher")
+                .details("Minecraft Launcher")
+                .assets(
+                    discord_rich_presence::activity::Assets::new()
+                        .large_image("logo")
+                        .large_text("Packet Launcher")
+                )
         );
     }
-    Ok(())
-}
 
-#[command]
-fn update_discord_rpc(state: String, details: String) -> Result<(), String> {
-    let mut client_lock = DISCORD_CLIENT.lock().unwrap();
-    if let Some(client) = client_lock.as_mut() {
-        let _ = client.set_activity(discord_rich_presence::activity::Activity::new()
-            .state(&state)
-            .details(&details)
-            .assets(discord_rich_presence::activity::Assets::new()
-                .large_image("logo")
-                .large_text("Packet Launcher"))
-        );
-    }
     Ok(())
 }
 
@@ -2027,7 +2019,6 @@ pub fn run() {
             list_instance_contents,
             set_pinned_instance,
             set_discord_rpc,
-            update_discord_rpc,
             upload_skin,
             purge_cache,
             list_screenshots,

@@ -230,7 +230,7 @@ function StatusBadge({ isGameRunning, isLaunching, onStopGame }: { isGameRunning
           {getStatusText()}
         </span>
         {isGameRunning && (
-          <button 
+          <button
             onClick={onStopGame}
             className="ml-2 p-1 rounded-full bg-red-500/20 hover:bg-red-500/30 text-red-400 transition-colors"
             title="Stop Game"
@@ -295,7 +295,7 @@ function App() {
           const isRunning = running as boolean;
           setIsGameRunning(isRunning);
           setIsLaunching(false);
-        }).catch(() => {});
+        }).catch(() => { });
       });
     }
 
@@ -360,15 +360,13 @@ function App() {
 
   // Discord RPC dynamic updates
   useEffect(() => {
-    const updateRPC = async () => {
-      if (localStorage.getItem("discord_rpc_enabled") === "false") return;
-      if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
-        try {
-          await invoke("set_discord_rpc", { enabled: true });
-        } catch { }
-      }
-    };
-    updateRPC();
+    const enabled = localStorage.getItem("discord_rpc_enabled") !== "false";
+
+    if (!enabled) return;
+
+    if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
+      invoke("set_discord_rpc", { enabled: true }).catch(console.error);
+    }
   }, []);
 
   return (
@@ -387,14 +385,14 @@ function App() {
             <DownloadManager />
             <AnimatedRoutes />
             {(isGameRunning || isLaunching) && (
-              <StatusBadge 
-                isGameRunning={isGameRunning} 
-                isLaunching={isLaunching} 
+              <StatusBadge
+                isGameRunning={isGameRunning}
+                isLaunching={isLaunching}
                 onStopGame={() => {
                   if ('__TAURI__' in window || (window as any).__TAURI_INTERNALS__) {
-                    invoke("stop_game").catch(() => {});
+                    invoke("stop_game").catch(() => { });
                   }
-                }} 
+                }}
               />
             )}
 
